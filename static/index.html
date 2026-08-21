@@ -9,11 +9,17 @@
 <body>
   <header>
     <h1>🎬 Auto&nbsp;Shorts</h1>
-    <p>Turn a topic into a finished vertical/horizontal short — fully automated.</p>
+    <p>Turn a topic into a finished short — or make a synced lyric reel.</p>
   </header>
 
+  <nav class="tabs">
+    <button class="tab active" data-tab="script">🎙️ AI Script Reel</button>
+    <button class="tab" data-tab="lyric">🎵 Lyric Reel</button>
+  </nav>
+
   <main>
-    <section class="card">
+    <!-- ================= AI SCRIPT REEL ================= -->
+    <section class="card tab-panel" id="panel-script">
       <h2>1 · Your topic</h2>
       <input id="topic" type="text" placeholder="e.g. the benefits of reading" value="the benefits of reading" />
 
@@ -37,17 +43,11 @@
             <option>Georgia</option><option>Comic Sans MS</option><option>Roboto</option>
           </select>
         </label>
-        <label>Size
-          <input id="sub_size" type="number" value="60" min="20" max="140" />
-        </label>
+        <label>Size <input id="sub_size" type="number" value="60" min="20" max="140" /></label>
         <label>Text color <input id="sub_color" type="color" value="#ffffff" /></label>
         <label>Outline <input id="sub_outline" type="color" value="#000000" /></label>
         <label>Position
-          <select id="sub_pos">
-            <option value="bottom">Bottom</option>
-            <option value="center">Center</option>
-            <option value="top">Top</option>
-          </select>
+          <select id="sub_pos"><option value="bottom">Bottom</option><option value="center">Center</option><option value="top">Top</option></select>
         </label>
         <label class="check"><input type="checkbox" id="sub_bold" checked /> Bold</label>
         <label class="check"><input type="checkbox" id="sub_box" checked /> Box behind text</label>
@@ -60,16 +60,84 @@
       </label>
 
       <button id="generate">▶ Generate video</button>
-    </section>
-
-    <section class="card">
       <h2>Progress</h2>
       <ul id="log" class="log"></ul>
-
       <div id="result" class="result hidden">
         <h2 id="result_title"></h2>
         <video id="player" controls playsinline></video>
         <a id="download" class="btn" download>⬇ Download</a>
+      </div>
+    </section>
+
+    <!-- ================= LYRIC REEL ================= -->
+    <section class="card tab-panel hidden" id="panel-lyric">
+      <h2>1 · Format</h2>
+      <div class="row">
+        <label class="radio"><input type="radio" name="lorient" value="vertical" checked /> 📱 Vertical (9:16)</label>
+        <label class="radio"><input type="radio" name="lorient" value="horizontal" /> 🖥️ Horizontal (16:9)</label>
+      </div>
+
+      <h2>2 · Background image</h2>
+      <div class="row">
+        <label class="radio"><input type="radio" name="imode" value="upload" checked /> Upload</label>
+        <label class="radio"><input type="radio" name="imode" value="stock" /> Stock search</label>
+        <label class="radio"><input type="radio" name="imode" value="ai" /> AI image</label>
+        <label class="radio"><input type="radio" name="imode" value="procedural" /> Gradient</label>
+      </div>
+      <div id="im-upload" class="im-box">
+        <input id="image_file" type="file" accept="image/*" />
+      </div>
+      <div id="im-stock" class="im-box hidden">
+        <div class="row">
+          <input id="image_query" type="text" placeholder="e.g. faceless couple, night city" />
+          <button id="img_search" type="button" class="mini">Search</button>
+        </div>
+        <div id="img_results" class="thumbs"></div>
+      </div>
+      <div id="im-ai" class="im-box hidden">
+        <input id="image_prompt" type="text" placeholder="e.g. faceless boy and girl watching each other, minimal illustration" />
+        <p class="hint">Needs GEMINI_API_KEY in .env.</p>
+      </div>
+
+      <h2>3 · Song (required)</h2>
+      <input id="song_file" type="file" accept="audio/*" />
+      <div class="row" style="margin-top:8px">
+        <button id="song_suggest" type="button" class="mini">Suggest free songs</button>
+      </div>
+      <ul id="song_list" class="log"></ul>
+
+      <h2>4 · Lyrics</h2>
+      <div class="row">
+        <label class="radio"><input type="radio" name="lmode" value="text" checked /> Paste text</label>
+        <label class="radio"><input type="radio" name="lmode" value="file" /> Upload file (.lrc/.srt/.txt)</label>
+      </div>
+      <textarea id="lyrics_text" rows="6" placeholder="Paste lyrics here, one line per line.&#10;For perfect sync, upload an .lrc or .srt with timestamps."></textarea>
+      <input id="lyrics_file" type="file" accept=".lrc,.srt,.txt" class="hidden" />
+      <label class="check" style="margin-top:6px"><input type="checkbox" id="auto_sync" /> Auto-sync plain lyrics to the song (needs demucs + faster-whisper)</label>
+
+      <h2>5 · Style</h2>
+      <div class="grid">
+        <label>Font <select id="lyric_font"></select></label>
+        <label>Size <input id="lyric_size" type="number" value="72" min="20" max="160" /></label>
+        <label>Text color <input id="lyric_text_color" type="color" value="#ffffff" /></label>
+        <label>Highlight (sung) <input id="lyric_hl_color" type="color" value="#ff5ca8" /></label>
+        <label>Outline <input id="lyric_outline" type="color" value="#000000" /></label>
+        <label>Position
+          <select id="lyric_pos"><option value="center">Center</option><option value="bottom">Bottom</option><option value="top">Top</option></select>
+        </label>
+        <label class="check"><input type="checkbox" id="lyric_bold" checked /> Bold</label>
+        <label class="check"><input type="checkbox" id="lyric_box" /> Box behind text</label>
+        <label class="check"><input type="checkbox" id="lyric_preview" checked /> Show next line</label>
+        <label class="check"><input type="checkbox" id="lyric_kenburns" checked /> Subtle motion (Ken Burns)</label>
+      </div>
+
+      <button id="generate_lyric">▶ Generate lyric reel</button>
+      <h2>Progress</h2>
+      <ul id="log_lyric" class="log"></ul>
+      <div id="result_lyric" class="result hidden">
+        <h2 id="result_lyric_title"></h2>
+        <video id="player_lyric" controls playsinline></video>
+        <a id="download_lyric" class="btn" download>⬇ Download</a>
       </div>
     </section>
   </main>

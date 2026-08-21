@@ -88,19 +88,50 @@ generates gradient background clips automatically.
 - Drop a music file (`.mp3` / `.wav` / `.ogg`) into `assets/music/` → it is
   looped as the soundtrack (random pick).
 
+## 🎵 Lyric Reel mode
+
+The second tab turns a **song + background image + lyrics** into a synced,
+stylized lyric video (like an Instagram Reel):
+
+1. **Background image** — upload your own, search **stock** (Pexels/Pixabay,
+   needs a free key), generate with **AI** (Gemini image model, needs
+   `GEMINI_API_KEY`), or use a procedural gradient. A subtle Ken Burns
+   zoom keeps it alive.
+2. **Song** — upload any audio file. Free/no-copyright suggestions are listed
+   via the *Suggest free songs* button (Pixabay Music when keyed, else a
+   curated source list).
+3. **Lyrics** — paste plain text (one line per line) **or** upload a timed
+   `.lrc` / `.srt` for **perfect** sync. Plain lyrics are distributed across
+   the song; enable *Auto-sync* to align them to the vocals automatically
+   (requires `pip install demucs faster-whisper`).
+4. **Style** — pick one of the bundled curly/handwriting fonts (Dancing
+   Script, Pacifico, Lobster, Great Vibes, Sacramento, …), set text/highlight/
+   outline colors, position, bold/box, and an optional "next line" preview.
+   Sung words light up in the highlight color (karaoke effect).
+5. **Render** — ffmpeg burns the karaoke ASS subtitles over the image and
+   muxes the song into a 9:16 (or 16:9) MP4.
+
+> Note: AI image generation and stock search need free API keys in `.env`.
+> The fully-free path is **upload your own image** + a procedural fallback.
+
 ## 🗂️ Project layout
 
 ```
 auto-shorts/
-├── app.py                 # Flask server + SSE progress API
+├── app.py                 # Flask server + SSE progress API (both modes)
 ├── config.py              # paths & settings (reads .env)
 ├── src/
-│   ├── script_gen.py      # Gemini + template fallback
+│   ├── script_gen.py      # Gemini + template fallback (AI Script Reel)
 │   ├── tts.py             # edge-tts narration
 │   ├── stock.py           # Pexels/Pixabay or procedural clips
-│   ├── subtitles.py       # ASS subtitle styling
+│   ├── subtitles.py       # ASS subtitle styling (AI Script Reel)
 │   ├── music.py           # ambient synth / local music
-│   └── video_builder.py   # ffmpeg assembly
+│   ├── video_builder.py   # ffmpeg assembly (AI Script Reel)
+│   ├── lyrics_align.py    # LRC/SRT parsing + auto-sync (Lyric Reel)
+│   ├── image_source.py     # upload / stock / AI / procedural images
+│   ├── lyric_renderer.py  # ASS karaoke + Ken Burns + ffmpeg (Lyric Reel)
+│   └── song_suggest.py    # free song suggestions
+├── fonts/                 # bundled curly/handwriting TTFs
 ├── static/                # web UI (index.html, app.js, style.css)
 ├── assets/                # optional user clips/ & music/
 ├── output/                # generated videos (gitignored)
@@ -125,6 +156,7 @@ auto-shorts/
 
 - `samples/sample_vertical.mp4` — 9:16 short
 - `samples/sample_horizontal.mp4` — 16:9 short
+- `samples/sample_lyric.mp4` — lyric reel (synced lyrics over a gradient)
 
 ## ⚠️ Notes
 - For production deployments use a real WSGI server (e.g. `gunicorn`) instead

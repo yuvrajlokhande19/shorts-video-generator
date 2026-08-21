@@ -24,3 +24,31 @@ RESOLUTIONS = {
     "vertical": (1080, 1920),    # 9:16  (TikTok / Reels / Shorts)
     "horizontal": (1920, 1080),  # 16:9  (YouTube)
 }
+
+# Gradient color pairs (hex, no '#') used for procedural backgrounds.
+GRADIENTS = [
+    ("0x1a2a6c", "0xb21f1f"),
+    ("0x0f2027", "0x2c5364"),
+    ("0x42275a", "0x734b6d"),
+    ("0x000428", "0x004e92"),
+    ("0x16222a", "0x3a6073"),
+    ("0x603813", "0xb29f94"),
+    ("0x1d4350", "0xa43931"),
+    ("0x0b486b", "0xf56217"),
+]
+
+FONTS_DIR = BASE_DIR / "fonts"
+
+# Curly / handwriting display fonts bundled in fonts/ (filename -> ASS family name)
+FONTS = {
+    "Dancing Script": "DancingScript.ttf",
+    "Pacifico": "Pacifico.ttf",
+    "Lobster": "Lobster.ttf",
+    "Caveat": "Caveat.ttf",
+    "Pinyon Script": "PinyonScript.ttf",
+    "Great Vibes": "GreatVibes.ttf",
+    "Sacramento": "Sacramento.ttf",
+    "Kaushan Script": "KaushanScript.ttf",
+    "Oleo Script": "OleoScript.ttf",
+    "Tangerine": "Tangerine.ttf",
+}

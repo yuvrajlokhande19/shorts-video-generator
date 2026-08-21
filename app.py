@@ -12,6 +12,10 @@ import src.stock as stock
 import src.subtitles as subtitles
 import src.music as music
 import src.video_builder as video_builder
+import src.lyrics_align as lyrics_align
+import src.image_source as image_source
+import src.lyric_renderer as lyric_renderer
+import src.song_suggest as song_suggest
 
 app = Flask(__name__, static_folder=None)
 
@@ -91,6 +95,43 @@ def api_voices():
     return jsonify(tts.VOICE_LIST)
 
 
+@app.route("/api/fonts")
+def api_fonts():
+    return jsonify(list(config.FONTS.keys()))
+
+
+@app.route("/api/songs")
+def api_songs():
+    return jsonify(song_suggest.suggest(request.args.get("query")))
+
+
+@app.route("/api/images/search", methods=["POST"])
+def api_image_search():
+    data = request.get_json(force=True, silent=True) or {}
+    query = data.get("query", "")
+    return jsonify({"images": image_source.search_images(query)})
+
+
+@app.route("/api/images/generate", methods=["POST"])
+def api_image_generate():
+    data = request.get_json(force=True, silent=True) or {}
+    prompt = data.get("prompt", "")
+    if not config.GEMINI_API_KEY:
+        return jsonify({"error": "Set GEMINI_API_KEY in .env to use AI images"}), 400
+    workdir = config.TEMP_DIR / uuid.uuid4().hex[:8]
+    workdir.mkdir(parents=True, exist_ok=True)
+    try:
+        path = image_source._ai_generate(prompt, workdir)
+        if not path:
+            return jsonify({"error": "AI image generation failed"}), 500
+        url = f"/output/_ai_{Path(path).name}"
+        import shutil
+        shutil.copy(path, config.OUTPUT_DIR / Path(path).name)
+        return jsonify({"url": url})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
 @app.route("/output/<path:f>")
 def output_file(f):
     return send_file(config.OUTPUT_DIR / f, mimetype="video/mp4")
@@ -108,6 +149,122 @@ def api_generate():
         yield from run_pipeline(opts)
 
     return Response(gen(), mimetype="text/event-stream")
+
+
+@app.route("/api/lyric/generate", methods=["POST"])
+def api_lyric_generate():
+    if "song_file" not in request.files:
+        return jsonify({"error": "song_file is required"}), 400
+
+    orientation = request.form.get("orientation", "vertical")
+    if orientation not in config.RESOLUTIONS:
+        orientation = "vertical"
+    w, h = config.RESOLUTIONS[orientation]
+
+    job_id = uuid.uuid4().hex[:8]
+    workdir = config.TEMP_DIR / job_id
+    workdir.mkdir(parents=True, exist_ok=True)
+
+    song = request.files["song_file"]
+    song_path = workdir / f"song{Path(song.filename).suffix or '.mp3'}"
+    song.save(str(song_path))
+
+    uploaded_image = None
+    if request.files.get("image_file"):
+        img = request.files["image_file"]
+        uploaded_image = workdir / f"upload{Path(img.filename).suffix or '.png'}"
+        img.save(str(uploaded_image))
+
+    lyrics_mode = request.form.get("lyrics_mode", "text")
+    if lyrics_mode == "file" and request.files.get("lyrics_file"):
+        lf = request.files["lyrics_file"]
+        lyrics_text = lf.read().decode("utf-8", errors="ignore")
+        lyrics_filename = lf.filename
+    else:
+        lyrics_text = request.form.get("lyrics_text", "")
+        lyrics_filename = None
+
+    style = {
+        "font": request.form.get("font", "Dancing Script"),
+        "size": int(request.form.get("size", 72)),
+        "text_color": request.form.get("text_color", "#ffffff"),
+        "highlight_color": request.form.get("highlight_color", "#ff5ca8"),
+        "outline_color": request.form.get("outline_color", "#000000"),
+        "position": request.form.get("position", "center"),
+        "bold": bool(request.form.get("bold")),
+        "box": bool(request.form.get("box")),
+        "preview": bool(request.form.get("preview")),
+    }
+    opts = {
+        "song_path": song_path,
+        "w": w, "h": h,
+        "image_mode": request.form.get("image_mode", "procedural"),
+        "uploaded_image": uploaded_image,
+        "image_url": request.form.get("image_url"),
+        "image_query": request.form.get("image_query"),
+        "image_prompt": request.form.get("image_prompt"),
+        "lyrics_text": lyrics_text,
+        "lyrics_filename": lyrics_filename,
+        "style": style,
+        "auto_sync": bool(request.form.get("auto_sync")),
+        "kenburns": bool(request.form.get("kenburns")),
+        "orientation": orientation,
+    }
+
+    def gen():
+        yield from run_lyric_pipeline(opts)
+
+    return Response(gen(), mimetype="text/event-stream")
+
+
+def run_lyric_pipeline(opts):
+    workdir = config.TEMP_DIR / uuid.uuid4().hex[:8]
+    workdir.mkdir(parents=True, exist_ok=True)
+    try:
+        yield _ev("progress", "Reading song…")
+        song_path = opts["song_path"]
+        duration = lyrics_align.song_duration(song_path)
+
+        yield _ev("progress", "Preparing background image…")
+        image_path = image_source.get_image(
+            opts["image_mode"], workdir, opts["w"], opts["h"],
+            uploaded=opts.get("uploaded_image"),
+            image_url=opts.get("image_url"),
+            query=opts.get("image_query"),
+            prompt=opts.get("image_prompt"),
+        )
+
+        yield _ev("progress", "Processing lyrics…")
+        lines = lyrics_align.parse_lyrics(opts["lyrics_text"], opts["lyrics_filename"])
+        if not lines:
+            yield _ev("error", "No lyrics found.")
+            return
+        has_times = any(ln["start"] is not None for ln in lines)
+        if opts["auto_sync"] and not has_times:
+            try:
+                lines = lyrics_align.auto_align(lines, song_path)
+                yield _ev("progress", "Auto-synced lyrics with the song (whisper).")
+            except Exception as exc:
+                yield _ev("progress", f"Auto-sync unavailable ({exc}); distributing evenly.")
+        lines = lyrics_align.finalize_timings(lines, duration)
+
+        yield _ev("progress", "Building styled subtitles…")
+        ass_path = workdir / "lyrics.ass"
+        lyric_renderer.build_ass(lines, opts["style"], opts["w"], opts["h"], ass_path)
+
+        yield _ev("progress", "Rendering video…")
+        out_name = f"lyric_{uuid.uuid4().hex[:8]}_{opts['orientation']}.mp4"
+        out_path = config.OUTPUT_DIR / out_name
+        lyric_renderer.render(image_path, song_path, ass_path,
+                              opts["w"], opts["h"], out_path, duration,
+                              kenburns=opts["kenburns"])
+
+        yield _ev("done", "Lyric reel ready!", url=f"/output/{out_name}",
+                  duration=round(duration, 1))
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        yield _ev("error", f"Failed: {exc}")
 
 
 if __name__ == "__main__":

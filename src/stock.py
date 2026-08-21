@@ -7,17 +7,8 @@ import urllib.request
 
 import config
 
-# Pleasant gradient color pairs (hex, no '#') used for procedural backgrounds.
-GRADIENTS = [
-    ("0x1a2a6c", "0xb21f1f"),
-    ("0x0f2027", "0x2c5364"),
-    ("0x42275a", "0x734b6d"),
-    ("0x000428", "0x004e92"),
-    ("0x16222a", "0x3a6073"),
-    ("0x603813", "0xb29f94"),
-    ("0x1d4350", "0xa43931"),
-    ("0x0b486b", "0xf56217"),
-]
+# Gradient color pairs (hex, no '#') used for procedural backgrounds.
+GRADIENTS = config.GRADIENTS
 
 
 def _local_clips():
