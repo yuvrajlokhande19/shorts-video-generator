@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Auto Shorts — AI Video Generator</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>🎬 Auto&nbsp;Shorts</h1>
+    <p>Turn a topic into a finished vertical/horizontal short — fully automated.</p>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>1 · Your topic</h2>
+      <input id="topic" type="text" placeholder="e.g. the benefits of reading" value="the benefits of reading" />
+
+      <h2>2 · Format</h2>
+      <div class="row">
+        <label class="radio"><input type="radio" name="orient" value="vertical" checked /> 📱 Vertical (9:16)</label>
+        <label class="radio"><input type="radio" name="orient" value="horizontal" /> 🖥️ Horizontal (16:9)</label>
+      </div>
+
+      <h2>3 · Voice &amp; AI</h2>
+      <div class="row">
+        <select id="voice"></select>
+        <label class="check"><input type="checkbox" id="use_ai" checked /> Use Gemini (falls back to template if no key)</label>
+      </div>
+
+      <h2>4 · Subtitle style</h2>
+      <div class="grid">
+        <label>Font
+          <select id="sub_font">
+            <option>Arial</option><option>Verdana</option><option>Impact</option>
+            <option>Georgia</option><option>Comic Sans MS</option><option>Roboto</option>
+          </select>
+        </label>
+        <label>Size
+          <input id="sub_size" type="number" value="60" min="20" max="140" />
+        </label>
+        <label>Text color <input id="sub_color" type="color" value="#ffffff" /></label>
+        <label>Outline <input id="sub_outline" type="color" value="#000000" /></label>
+        <label>Position
+          <select id="sub_pos">
+            <option value="bottom">Bottom</option>
+            <option value="center">Center</option>
+            <option value="top">Top</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" id="sub_bold" checked /> Bold</label>
+        <label class="check"><input type="checkbox" id="sub_box" checked /> Box behind text</label>
+        <label class="check"><input type="checkbox" id="sub_highlight" /> Karaoke highlight</label>
+      </div>
+
+      <h2>5 · Music</h2>
+      <label>Background volume: <span id="mv_label">35%</span>
+        <input id="music_vol" type="range" min="0" max="100" value="35" />
+      </label>
+
+      <button id="generate">▶ Generate video</button>
+    </section>
+
+    <section class="card">
+      <h2>Progress</h2>
+      <ul id="log" class="log"></ul>
+
+      <div id="result" class="result hidden">
+        <h2 id="result_title"></h2>
+        <video id="player" controls playsinline></video>
+        <a id="download" class="btn" download>⬇ Download</a>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
