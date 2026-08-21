@@ -1,156 +1,219 @@
 const $ = (id) => document.getElementById(id);
 
-/* ---------------- shared SSE reader ---------------- */
-function streamSSE(resp, onEvent) {
-  const reader = resp.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  return reader.read().then(function process({ value, done }) {
-    if (done) return;
-    buffer += decoder.decode(value, { stream: true });
-    const parts = buffer.split("\n\n");
-    buffer = parts.pop();
-    for (const part of parts) {
-      const line = part.split("\n").find((l) => l.startsWith("data:"));
-      if (!line) continue;
-      onEvent(JSON.parse(line.slice(5).trim()));
-    }
-    return reader.read().then(process);
+/* ---------------- segmented control ---------------- */
+function movePill() {
+  const active = document.querySelector(".seg-btn.active");
+  const pill = $("segPill");
+  if (active && pill) {
+    pill.style.width = active.offsetWidth + "px";
+    pill.style.transform = `translateX(${active.offsetLeft - 5}px)`;
+  }
+}
+document.querySelectorAll(".seg-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".seg-btn").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
+    $("panel-" + btn.dataset.mode).classList.add("active");
+    movePill();
+  });
+});
+window.addEventListener("resize", movePill);
+setTimeout(movePill, 60);
+
+/* ---------------- radio cards ---------------- */
+function updateVisibility(group, value) {
+  if (group === "s_visual") {
+    $("s_upload").classList.toggle("hidden", value !== "upload");
+  } else if (group === "s_music") {
+    $("s_music_up").classList.toggle("hidden", value !== "upload");
+  } else if (group === "r_img") {
+    $("r_upload").classList.toggle("hidden", value !== "upload");
+    $("r_img_search").classList.toggle("hidden", value !== "stock");
+    $("r_img_ai").classList.toggle("hidden", value !== "ai");
+  }
+}
+document.querySelectorAll(".radio-card").forEach((card) => {
+  card.addEventListener("click", () => {
+    const group = card.dataset.name;
+    const cards = [...document.querySelectorAll(`.radio-card[data-name="${group}"]`)];
+    cards.forEach((c) => c.classList.remove("active"));
+    card.classList.add("active");
+    const idx = cards.indexOf(card);
+    const radios = [...document.querySelectorAll(`input[type=radio][name="${group}"]`)];
+    if (radios[idx]) radios[idx].checked = true;
+    updateVisibility(group, radios[idx] ? radios[idx].value : "");
+  });
+});
+
+/* ---------------- topic chips ---------------- */
+$("s_chips").addEventListener("click", (e) => {
+  if (e.target.classList.contains("chip")) $("s_topic").value = e.target.textContent;
+});
+
+/* ---------------- dropzones / previews ---------------- */
+let sImages = [], sSong = null, rImage = null, rSong = null;
+
+function bindDropzone(zoneId, inputId, onFiles) {
+  const zone = $(zoneId), input = $(inputId);
+  zone.addEventListener("click", () => input.click());
+  zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.add("drag"); });
+  zone.addEventListener("dragleave", () => zone.classList.remove("drag"));
+  zone.addEventListener("drop", (e) => { e.preventDefault(); zone.classList.remove("drag"); input.files = e.dataTransfer.files; onFiles(input.files); });
+  input.addEventListener("change", () => onFiles(input.files));
+}
+
+function renderThumbs(containerId, files, onRemove) {
+  const box = $(containerId);
+  box.innerHTML = "";
+  [...files].forEach((f, i) => {
+    const wrap = document.createElement("div");
+    wrap.className = "thumb-wrap";
+    const img = document.createElement("img");
+    img.src = URL.createObjectURL(f);
+    const rm = document.createElement("button");
+    rm.className = "rm"; rm.textContent = "×"; rm.type = "button";
+    rm.onclick = () => onRemove(i);
+    wrap.append(img, rm);
+    box.appendChild(wrap);
   });
 }
 
-function addLog(listId, msg, cls) {
-  const li = document.createElement("li");
-  li.textContent = msg;
-  if (cls) li.className = cls;
-  $(listId).appendChild(li);
+bindDropzone("s_upload", "s_images", (files) => {
+  sImages = [...files];
+  rerenderS();
+});
+function rerenderS() {
+  renderThumbs("s_upload", sImages, (i) => { sImages.splice(i, 1); rerenderS(); });
 }
 
+bindDropzone("s_music_up", "s_bgsong", (files) => {
+  sSong = files[0] || null;
+  $("s_audio_prev").innerHTML = sSong ? `<audio class="audio-prev" controls src="${URL.createObjectURL(sSong)}"></audio>` : "";
+});
+
+bindDropzone("r_upload", "r_image_file", (files) => {
+  rImage = files[0] || null;
+  renderThumbs("r_upload", rImage ? [rImage] : [], () => { rImage = null; renderThumbs("r_upload", []); });
+});
+
+bindDropzone("r_song_dz", "r_song_file", (files) => {
+  rSong = files[0] || null;
+  $("r_audio_prev").innerHTML = rSong ? `<audio class="audio-prev" controls src="${URL.createObjectURL(rSong)}"></audio>` : "";
+});
+
+/* ---------------- SSE + progress ---------------- */
+function streamSSE(resp, onEvent) {
+  const reader = resp.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  return reader.read().then(function proc({ value, done }) {
+    if (done) return;
+    buf += dec.decode(value, { stream: true });
+    buf.split("\n\n").forEach((part, i, arr) => {
+      if (i === arr.length - 1) return;
+      const line = part.split("\n").find((l) => l.startsWith("data:"));
+      if (line) onEvent(JSON.parse(line.slice(5).trim()));
+    });
+    buf = buf.split("\n\n").pop();
+    return reader.read().then(proc);
+  });
+}
+
+function setupProgress(prefix) {
+  $(prefix + "_steps").innerHTML = "";
+  $(prefix + "_bar").style.width = "4%";
+  $(prefix + "_progress").classList.add("show");
+  $(prefix + "_result").classList.remove("show");
+}
+function step(prefix, msg, cls) {
+  const li = document.createElement("li");
+  if (cls) li.className = cls;
+  li.innerHTML = `<span class="tick">${cls === "done" ? "✓" : cls === "error" ? "!" : ""}</span><span>${msg}</span>`;
+  $(prefix + "_steps").appendChild(li);
+  const pct = Math.min(96, ($(prefix + "_steps").children.length) * 15);
+  $(prefix + "_bar").style.width = pct + "%";
+}
+function finishProgress(prefix) { $(prefix + "_bar").style.width = "100%"; }
+
 function showResult(prefix, data) {
-  $(`result_${prefix}`).classList.remove("hidden");
-  $(`result_${prefix}_title`).textContent = data.title || "Your video";
-  $(`player_${prefix}`).src = data.url;
-  const a = $(`download_${prefix}`);
+  $(prefix + "_result").classList.remove("show");
+  void $(prefix + "_result").offsetWidth;
+  $(prefix + "_result").classList.add("show");
+  $(prefix + "_player").src = data.url;
+  const a = $(prefix + "_download");
   a.href = data.url;
   a.setAttribute("download", data.url.split("/").pop());
 }
 
-/* ---------------- AI Script Reel ---------------- */
+/* ---------------- load options ---------------- */
 async function loadVoices() {
   try {
-    const r = await fetch("/api/voices");
-    const voices = await r.json();
-    const sel = $("voice");
-    voices.forEach((v) => {
-      const o = document.createElement("option");
-      o.value = v.id; o.textContent = v.label;
-      sel.appendChild(o);
-    });
-  } catch (e) { console.error(e); }
+    const v = await (await fetch("/api/voices")).json();
+    v.forEach((x) => $("s_voice").appendChild(new Option(x.label, x.id)));
+  } catch (e) {}
 }
-
 async function loadFonts() {
   try {
-    const r = await fetch("/api/fonts");
-    const fonts = await r.json();
-    const sel = $("lyric_font");
-    fonts.forEach((f) => {
-      const o = document.createElement("option");
-      o.value = f; o.textContent = f;
-      sel.appendChild(o);
-    });
-  } catch (e) { console.error(e); }
+    const f = await (await fetch("/api/fonts")).json();
+    f.forEach((x) => { $("r_font").appendChild(new Option(x, x)); });
+  } catch (e) {}
 }
+loadVoices(); loadFonts();
 
-$("music_vol").addEventListener("input", (e) => {
-  $("mv_label").textContent = e.target.value + "%";
-});
+/* ---------------- SHORT generate ---------------- */
+$("s_generate").addEventListener("click", async () => {
+  const btn = $("s_generate"); btn.disabled = true;
+  if (!$("s_topic").value.trim()) { alert("Please enter a topic."); btn.disabled = false; return; }
+  setupProgress("s");
+  startFluid();
+  const fd = new FormData();
+  fd.append("topic", $("s_topic").value.trim());
+  fd.append("orientation", document.querySelector('input[name=s_orient]:checked').value);
+  fd.append("voice", $("s_voice").value);
+  if ($("s_use_ai").checked) fd.append("use_ai", "on");
+  fd.append("music_volume", $("s_mvol").value);
+  fd.append("font", $("s_font").value);
+  fd.append("size", $("s_size").value);
+  fd.append("color", $("s_color").value);
+  fd.append("outline", $("s_outline").value);
+  fd.append("position", $("s_pos").value);
+  if ($("s_bold").checked) fd.append("bold", "on");
+  if ($("s_box").checked) fd.append("box", "on");
+  if ($("s_hl").checked) fd.append("highlight", "on");
+  if (document.querySelector('input[name=s_visual]:checked').value === "upload")
+    sImages.forEach((f) => fd.append("images", f));
+  if (document.querySelector('input[name=s_music]:checked').value === "upload" && sSong)
+    fd.append("bg_song", sSong);
 
-$("generate").addEventListener("click", async () => {
-  const btn = $("generate");
-  btn.disabled = true;
-  $("log").innerHTML = "";
-  $("result").classList.add("hidden");
-  const orient = document.querySelector('input[name=orient]:checked').value;
-  const opts = {
-    topic: $("topic").value.trim(),
-    orientation: orient,
-    voice: $("voice").value,
-    use_ai: $("use_ai").checked,
-    music_volume: Number($("music_vol").value),
-    subtitle_style: {
-      font: $("sub_font").value,
-      size: Number($("sub_size").value),
-      color: $("sub_color").value,
-      outline: $("sub_outline").value,
-      position: $("sub_pos").value,
-      bold: $("sub_bold").checked,
-      box: $("sub_box").checked,
-      highlight: $("sub_highlight").checked,
-    },
-  };
-  if (!opts.topic) { alert("Please enter a topic."); btn.disabled = false; return; }
   try {
-    const resp = await fetch("/api/generate", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(opts),
-    });
+    const resp = await fetch("/api/generate", { method: "POST", body: fd });
     await streamSSE(resp, (d) => {
-      if (d.type === "progress") addLog("log", "• " + d.message);
-      else if (d.type === "done") { addLog("log", "✓ " + d.message, "done"); showResult("", d); }
-      else if (d.type === "error") addLog("log", "✗ " + d.message, "error");
+      if (d.type === "progress") step("s", d.message, "done");
+      else if (d.type === "done") { finishProgress("s"); stopFluid(); step("s", d.message, "done"); showResult("s", d); }
+      else if (d.type === "error") { stopFluid(); step("s", d.message, "error"); }
     });
-  } catch (e) { addLog("log", "✗ Network error: " + e.message, "error"); }
+  } catch (e) { step("s", "Network error: " + e.message, "error"); }
   btn.disabled = false;
 });
 
-/* ---------------- Lyric Reel ---------------- */
-// tab switching
-document.querySelectorAll(".tab").forEach((t) => {
-  t.addEventListener("click", () => {
-    document.querySelectorAll(".tab").forEach((x) => x.classList.remove("active"));
-    document.querySelectorAll(".tab-panel").forEach((x) => x.classList.add("hidden"));
-    t.classList.add("active");
-    $("panel-" + t.dataset.tab).classList.remove("hidden");
-  });
-});
-
-// image mode boxes
-document.querySelectorAll('input[name=imode]').forEach((r) => {
-  r.addEventListener("change", () => {
-    ["upload", "stock", "ai", "procedural"].forEach((m) => {
-      $("im-" + m).classList.toggle("hidden", r.value !== m);
-    });
-  });
-});
-// lyrics mode
-document.querySelectorAll('input[name=lmode]').forEach((r) => {
-  r.addEventListener("change", () => {
-    $("lyrics_text").classList.toggle("hidden", r.value !== "text");
-    $("lyrics_file").classList.toggle("hidden", r.value !== "file");
-  });
-});
-
-// stock image search
-$("img_search").addEventListener("click", async () => {
-  const box = $("img_results");
-  box.innerHTML = "searching…";
+/* ---------------- REEL generate ---------------- */
+$("r_img_btn").addEventListener("click", async () => {
+  const box = $("r_img_results"); box.innerHTML = "searching…";
   try {
-    const resp = await fetch("/api/images/search", {
+    const r = await fetch("/api/images/search", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query: $("image_query").value.trim() || "couples" }),
+      body: JSON.stringify({ query: $("r_image_query").value.trim() || "couples" }),
     });
-    const data = await resp.json();
+    const data = await r.json();
     box.innerHTML = "";
     (data.images || []).forEach((img) => {
       const el = document.createElement("img");
-      el.src = img.thumb || img.url;
-      el.className = "thumb";
+      el.src = img.thumb || img.url; el.className = "thumb";
       el.onclick = () => {
-        document.querySelectorAll(".thumb").forEach((x) => x.style.border = "");
-        el.style.border = "3px solid #6c8cff";
-        $("image_url_holder") || box.appendChild(Object.assign(document.createElement("input"), { type: "hidden", id: "image_url_holder", value: img.url }));
-        window.__selectedImageUrl = img.url;
+        document.querySelectorAll("#r_img_results .thumb").forEach((x) => (x.style.border = ""));
+        el.style.border = "3px solid #db2777";
+        window.__rImgUrl = img.url;
       };
       box.appendChild(el);
     });
@@ -158,73 +221,100 @@ $("img_search").addEventListener("click", async () => {
   } catch (e) { box.textContent = "search failed: " + e.message; }
 });
 
-// song suggestions
-$("song_suggest").addEventListener("click", async () => {
-  const list = $("song_list");
-  list.innerHTML = "loading…";
+$("r_song_btn").addEventListener("click", async () => {
+  const list = $("r_song_list"); list.innerHTML = "loading…";
   try {
-    const resp = await fetch("/api/songs?query=" + encodeURIComponent($("image_query").value || "lofi"));
-    const songs = await resp.json();
+    const r = await fetch("/api/songs?query=" + encodeURIComponent($("r_image_query").value || "lofi"));
+    const songs = await r.json();
     list.innerHTML = "";
     songs.forEach((s) => {
       const li = document.createElement("li");
       const a = document.createElement("a");
-      a.href = s.url; a.target = "_blank"; a.textContent = `🎵 ${s.title} — ${s.artist} (${s.license})`;
-      a.style.color = "#6c8cff";
-      li.appendChild(a);
-      list.appendChild(li);
+      a.href = s.url; a.target = "_blank"; a.textContent = `🎵 ${s.title} — ${s.artist}`;
+      a.style.color = "#c4b5fd"; li.appendChild(a); list.appendChild(li);
     });
   } catch (e) { list.innerHTML = "failed: " + e.message; }
 });
 
-$("generate_lyric").addEventListener("click", async () => {
-  const btn = $("generate_lyric");
-  btn.disabled = true;
-  $("log_lyric").innerHTML = "";
-  $("result_lyric").classList.add("hidden");
-
-  if (!$("song_file").files.length) { alert("Please choose a song file."); btn.disabled = false; return; }
-
+$("r_generate").addEventListener("click", async () => {
+  const btn = $("r_generate"); btn.disabled = true;
+  if (!$("r_song_file").files.length) { alert("Please choose a song file."); btn.disabled = false; return; }
+  setupProgress("r");
+  startFluid();
   const fd = new FormData();
-  const orient = document.querySelector('input[name=lorient]:checked').value;
-  const imode = document.querySelector('input[name=imode]:checked').value;
-  const lmode = document.querySelector('input[name=lmode]:checked').value;
-
-  fd.append("orientation", orient);
-  fd.append("image_mode", imode);
-  fd.append("lyrics_mode", lmode);
-  fd.append("auto_sync", $("auto_sync").checked ? "on" : "");
-  fd.append("kenburns", $("lyric_kenburns").checked ? "on" : "");
-  fd.append("song_file", $("song_file").files[0]);
-
-  if (imode === "upload" && $("image_file").files.length) fd.append("image_file", $("image_file").files[0]);
-  if (imode === "stock" && window.__selectedImageUrl) fd.append("image_url", window.__selectedImageUrl);
-  if (imode === "stock") fd.append("image_query", $("image_query").value);
-  if (imode === "ai") fd.append("image_prompt", $("image_prompt").value);
-
-  if (lmode === "file" && $("lyrics_file").files.length) fd.append("lyrics_file", $("lyrics_file").files[0]);
-  else fd.append("lyrics_text", $("lyrics_text").value);
-
-  fd.append("font", $("lyric_font").value);
-  fd.append("size", $("lyric_size").value);
-  fd.append("text_color", $("lyric_text_color").value);
-  fd.append("highlight_color", $("lyric_hl_color").value);
-  fd.append("outline_color", $("lyric_outline").value);
-  fd.append("position", $("lyric_pos").value);
-  fd.append("bold", $("lyric_bold").checked ? "on" : "");
-  fd.append("box", $("lyric_box").checked ? "on" : "");
-  fd.append("preview", $("lyric_preview").checked ? "on" : "");
+  fd.append("orientation", document.querySelector('input[name=r_orient]:checked').value);
+  fd.append("image_mode", document.querySelector('input[name=r_img]:checked').value);
+  fd.append("lyrics_mode", document.querySelector('input[name=r_lyr]:checked').value);
+  fd.append("theme", $("r_theme").value);
+  if ($("r_auto").checked) fd.append("auto_sync", "on");
+  if ($("r_kenburns").checked) fd.append("kenburns", "on");
+  fd.append("song_file", $("r_song_file").files[0]);
+  if (document.querySelector('input[name=r_img]:checked').value === "upload" && rImage)
+    fd.append("image_file", rImage);
+  if (window.__rImgUrl) fd.append("image_url", window.__rImgUrl);
+  if (document.querySelector('input[name=r_img]:checked').value === "stock")
+    fd.append("image_query", $("r_image_query").value);
+  if (document.querySelector('input[name=r_img]:checked').value === "ai")
+    fd.append("image_prompt", $("r_image_prompt").value);
+  if (document.querySelector('input[name=r_lyr]:checked').value === "file" && $("r_lyrics_file").files.length)
+    fd.append("lyrics_file", $("r_lyrics_file").files[0]);
+  else fd.append("lyrics_text", $("r_lyrics").value);
+  fd.append("font", $("r_font").value);
+  fd.append("size", $("r_size").value);
+  fd.append("text_color", $("r_tcolor").value);
+  fd.append("highlight_color", $("r_hcolor").value);
+  fd.append("outline_color", $("r_ocolor").value);
+  fd.append("position", $("r_pos").value);
+  if ($("r_bold").checked) fd.append("bold", "on");
+  if ($("r_box").checked) fd.append("box", "on");
+  if ($("r_preview").checked) fd.append("preview", "on");
 
   try {
     const resp = await fetch("/api/lyric/generate", { method: "POST", body: fd });
     await streamSSE(resp, (d) => {
-      if (d.type === "progress") addLog("log_lyric", "• " + d.message);
-      else if (d.type === "done") { addLog("log_lyric", "✓ " + d.message, "done"); showResult("lyric", d); }
-      else if (d.type === "error") addLog("log_lyric", "✗ " + d.message, "error");
+      if (d.type === "progress") step("r", d.message, "done");
+      else if (d.type === "done") { finishProgress("r"); stopFluid(); step("r", d.message, "done"); showResult("r", d); }
+      else if (d.type === "error") { stopFluid(); step("r", d.message, "error"); }
     });
-  } catch (e) { addLog("log_lyric", "✗ Network error: " + e.message, "error"); }
+  } catch (e) { step("r", "Network error: " + e.message, "error"); }
   btn.disabled = false;
 });
 
-loadVoices();
-loadFonts();
+/* lyrics file picker shows when "upload file" selected */
+document.querySelectorAll('.radio-card[data-name="r_lyr"]').forEach((c) => {
+  c.addEventListener("click", () => {
+    const val = document.querySelector('input[name=r_lyr]:checked').value;
+    $("r_lyrics").classList.toggle("hidden", val !== "text");
+    $("r_lyrics_file").classList.toggle("hidden", val !== "file");
+  });
+});
+
+/* ---------------- fluid simulation (generative background) ---------------- */
+const fluid = $("fluid");
+const fctx = fluid.getContext("2d");
+let fluidRAF = null, fluidT = 0;
+const BLOBS = [
+  "rgba(124,58,237,0.55)", "rgba(219,39,119,0.5)",
+  "rgba(225,29,72,0.45)", "rgba(56,189,248,0.4)",
+];
+function resizeFluid() { fluid.width = innerWidth; fluid.height = innerHeight; }
+addEventListener("resize", resizeFluid);
+function loopFluid() {
+  fluidT += 0.012;
+  const w = fluid.width, h = fluid.height;
+  fctx.clearRect(0, 0, w, h);
+  fctx.globalCompositeOperation = "lighter";
+  for (let i = 0; i < BLOBS.length; i++) {
+    const x = w / 2 + Math.cos(fluidT * 0.5 + i * 1.7) * w * 0.26 + Math.sin(fluidT * 0.9 + i) * 70;
+    const y = h / 2 + Math.sin(fluidT * 0.6 + i * 2.1) * h * 0.26 + Math.cos(fluidT * 0.7 + i) * 70;
+    const r = Math.max(w, h) * 0.34;
+    const g = fctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, BLOBS[i]);
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    fctx.fillStyle = g;
+    fctx.beginPath(); fctx.arc(x, y, r, 0, 7); fctx.fill();
+  }
+  fluidRAF = requestAnimationFrame(loopFluid);
+}
+function startFluid() { resizeFluid(); fluid.classList.add("on"); if (!fluidRAF) loopFluid(); }
+function stopFluid() { fluid.classList.remove("on"); if (fluidRAF) { cancelAnimationFrame(fluidRAF); fluidRAF = null; } }

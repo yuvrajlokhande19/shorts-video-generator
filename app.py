@@ -57,14 +57,16 @@ def run_pipeline(opts):
         total_dur = sum(t["duration"] for t in timings)
 
         yield _ev("progress", "Preparing background footage…")
-        clip_paths = stock.get_clips(topic, timings, w, h, workdir)
+        clip_paths = stock.get_clips(topic, timings, w, h, workdir,
+                                     local_images=opts.get("local_images"))
 
         yield _ev("progress", "Building subtitles…")
         ass_path = workdir / "subs.ass"
         subtitles.build_ass(timings, style, ass_path)
 
         yield _ev("progress", "Adding background music…")
-        music_path = music.get_music(total_dur, workdir)
+        music_path = music.get_music(total_dur, workdir,
+                                     override=opts.get("bg_song_path"))
 
         yield _ev("progress", "Rendering video…")
         out_name = f"{job_id}_{orientation}.mp4"
@@ -139,11 +141,49 @@ def output_file(f):
 
 @app.route("/api/generate", methods=["POST"])
 def api_generate():
-    opts = request.get_json(force=True, silent=True) or {}
-    if not opts.get("topic"):
+    if "topic" not in request.form and "topic" not in request.values:
         return jsonify({"error": "topic is required"}), 400
 
-    q = []
+    orientation = request.form.get("orientation", "vertical")
+    if orientation not in config.RESOLUTIONS:
+        orientation = "vertical"
+    w, h = config.RESOLUTIONS[orientation]
+    workdir = config.TEMP_DIR / uuid.uuid4().hex[:8]
+    workdir.mkdir(parents=True, exist_ok=True)
+
+    # optional uploaded background images (story mode)
+    local_images = []
+    for f in request.files.getlist("images"):
+        if f and f.filename:
+            p = workdir / f"img_{len(local_images)}{Path(f.filename).suffix or '.png'}"
+            f.save(str(p))
+            local_images.append(p)
+
+    bg_song_path = None
+    if request.files.get("bg_song"):
+        bf = request.files["bg_song"]
+        bg_song_path = workdir / f"bgsong{Path(bf.filename).suffix or '.mp3'}"
+        bf.save(str(bg_song_path))
+
+    opts = {
+        "topic": request.form.get("topic", "").strip(),
+        "orientation": orientation,
+        "voice": request.form.get("voice", "en-US-AriaNeural"),
+        "use_ai": bool(request.form.get("use_ai")),
+        "music_volume": float(request.form.get("music_volume", 35)),
+        "subtitle_style": {
+            "font": request.form.get("font", "Arial"),
+            "size": int(request.form.get("size", 60)),
+            "color": request.form.get("color", "#ffffff"),
+            "outline": request.form.get("outline", "#000000"),
+            "position": request.form.get("position", "bottom"),
+            "bold": bool(request.form.get("bold")),
+            "box": bool(request.form.get("box")),
+            "highlight": bool(request.form.get("highlight")),
+        },
+        "local_images": local_images or None,
+        "bg_song_path": bg_song_path,
+    }
 
     def gen():
         yield from run_pipeline(opts)
@@ -175,7 +215,7 @@ def api_lyric_generate():
         uploaded_image = workdir / f"upload{Path(img.filename).suffix or '.png'}"
         img.save(str(uploaded_image))
 
-    lyrics_mode = request.form.get("lyrics_mode", "text")
+    lyrics_mode = request.form.get("lyrics_mode", "auto")
     if lyrics_mode == "file" and request.files.get("lyrics_file"):
         lf = request.files["lyrics_file"]
         lyrics_text = lf.read().decode("utf-8", errors="ignore")
@@ -183,6 +223,7 @@ def api_lyric_generate():
     else:
         lyrics_text = request.form.get("lyrics_text", "")
         lyrics_filename = None
+    theme = request.form.get("theme", "")
 
     style = {
         "font": request.form.get("font", "Dancing Script"),
@@ -205,6 +246,8 @@ def api_lyric_generate():
         "image_prompt": request.form.get("image_prompt"),
         "lyrics_text": lyrics_text,
         "lyrics_filename": lyrics_filename,
+        "lyrics_mode": lyrics_mode,
+        "theme": theme,
         "style": style,
         "auto_sync": bool(request.form.get("auto_sync")),
         "kenburns": bool(request.form.get("kenburns")),
@@ -235,17 +278,24 @@ def run_lyric_pipeline(opts):
         )
 
         yield _ev("progress", "Processing lyrics…")
-        lines = lyrics_align.parse_lyrics(opts["lyrics_text"], opts["lyrics_filename"])
+        orig_mode = opts.get("lyrics_mode", "text")
+        lyrics_text = opts.get("lyrics_text", "")
+        if orig_mode == "auto":
+            yield _ev("progress", "Generating lyrics from the song's theme…")
+            gen_lines = lyrics_align.generate_lyrics(opts.get("theme", ""))
+            lyrics_text = "\n".join(gen_lines)
+            opts["auto_sync"] = True  # force vocal sync in auto mode
+        lines = lyrics_align.parse_lyrics(lyrics_text, opts.get("lyrics_filename"))
         if not lines:
             yield _ev("error", "No lyrics found.")
             return
         has_times = any(ln["start"] is not None for ln in lines)
-        if opts["auto_sync"] and not has_times:
+        if opts.get("auto_sync") and not has_times:
             try:
                 lines = lyrics_align.auto_align(lines, song_path)
-                yield _ev("progress", "Auto-synced lyrics with the song (whisper).")
+                yield _ev("progress", "Auto-synced lyrics to the song (vocals aligned).")
             except Exception as exc:
-                yield _ev("progress", f"Auto-sync unavailable ({exc}); distributing evenly.")
+                yield _ev("progress", f"Vocal auto-sync unavailable ({exc}); timing evenly.")
         lines = lyrics_align.finalize_timings(lines, duration)
 
         yield _ev("progress", "Building styled subtitles…")

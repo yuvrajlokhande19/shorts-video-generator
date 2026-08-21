@@ -12,6 +12,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+import config
+
 
 def _hms_to_sec(s):
     s = s.strip()
@@ -137,6 +139,44 @@ def detect_format(filename, text):
     if "-->" in text:
         return "srt"
     return "txt"
+
+
+def generate_lyrics(theme, n=12):
+    """Generate original lyric lines for a theme via Gemini (free template fallback)."""
+    if config.GEMINI_API_KEY:
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=config.GEMINI_API_KEY)
+            model = genai.GenerativeModel(config.GEMINI_MODEL)
+            prompt = (
+                f"Write original song lyrics for a short video (Instagram Reel / TikTok) "
+                f"about: {theme}.\nReturn STRICT JSON only, no markdown: "
+                f'{{"lines": [string, ...]}} with about {n} short lines '
+                f"(max 8 words each), emotional and rhythmic, one line per caption."
+            )
+            resp = model.generate_content(prompt)
+            text = re.sub(r"```json|```", "", resp.text).strip()
+            data = json.loads(text)
+            lines = [str(l).strip() for l in data.get("lines", []) if str(l).strip()]
+            if lines:
+                return lines
+        except Exception as exc:
+            print(f"[lyrics] Gemini generation failed ({exc}); using template.")
+    return _template_lyrics(theme)
+
+
+def _template_lyrics(theme):
+    t = (theme or "this feeling").strip().title()
+    return [
+        f"When the night is quiet, I think of {t}",
+        "Every echo in the dark sounds like your name",
+        "We were a song that the world forgot to play",
+        "Dancing in the rain with no one to save",
+        "Hold the moment before it turns to grey",
+        "Somewhere the stars still remember our tune",
+        "If love is a lyric, then write me the truth",
+        "And I will sing it softly, alone in the moon",
+    ]
 
 
 def parse_lyrics(text, filename=None):

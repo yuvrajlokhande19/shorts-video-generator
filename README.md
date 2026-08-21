@@ -88,28 +88,42 @@ generates gradient background clips automatically.
 - Drop a music file (`.mp3` / `.wav` / `.ogg`) into `assets/music/` → it is
   looped as the soundtrack (random pick).
 
-## 🎵 Lyric Reel mode
+## 🎵 Lyric Reel mode (the headline feature)
 
-The second tab turns a **song + background image + lyrics** into a synced,
-stylized lyric video (like an Instagram Reel):
+Turn a **song** into a synced, stylized lyric video (Instagram Reel / TikTok)
+with almost no effort:
 
-1. **Background image** — upload your own, search **stock** (Pexels/Pixabay,
-   needs a free key), generate with **AI** (Gemini image model, needs
-   `GEMINI_API_KEY`), or use a procedural gradient. A subtle Ken Burns
-   zoom keeps it alive.
-2. **Song** — upload any audio file. Free/no-copyright suggestions are listed
-   via the *Suggest free songs* button (Pixabay Music when keyed, else a
-   curated source list).
-3. **Lyrics** — paste plain text (one line per line) **or** upload a timed
-   `.lrc` / `.srt` for **perfect** sync. Plain lyrics are distributed across
-   the song; enable *Auto-sync* to align them to the vocals automatically
-   (requires `pip install demucs faster-whisper`).
-4. **Style** — pick one of the bundled curly/handwriting fonts (Dancing
-   Script, Pacifico, Lobster, Great Vibes, Sacramento, …), set text/highlight/
-   outline colors, position, bold/box, and an optional "next line" preview.
-   Sung words light up in the highlight color (karaoke effect).
-5. **Render** — ffmpeg burns the karaoke ASS subtitles over the image and
-   muxes the song into a 9:16 (or 16:9) MP4.
+- **Auto mode (default):** just drop a **song** and (optionally) a **theme/mood**
+  (e.g. *"lofi, missing someone"*). The app **writes the lyrics for you**
+  (Gemini, with a built-in template fallback) and **auto-syncs them to the
+  song**. No copy-pasting required.
+- **Lyrics options:** *Auto* (AI + sync), *Paste text*, or *Upload `.lrc`/`.srt`*
+  for frame-perfect sync.
+- **Background image:** upload your own, **stock search** (Pexels/Pixabay,
+  needs a free key), **AI image** (Gemini, needs `GEMINI_API_KEY`), or a
+  procedural gradient. A subtle Ken Burns zoom keeps it alive.
+- **Song:** upload any audio; *Suggest free songs* lists no-copyright sources
+  (Pixabay Music when keyed, else a curated list).
+- **Style:** bundled curly/handwriting fonts (Dancing Script, Pacifico, Lobster,
+  Great Vibes, Sacramento, …), text/highlight/outline colors, position,
+  bold/box, and a "next line" preview. Sung words light up in the highlight
+  color (karaoke effect).
+- **Render:** ffmpeg burns the karaoke ASS subtitles over the image and muxes
+  the song into a 9:16 (or 16:9) MP4.
+
+### Real vocal sync (optional but recommended)
+For lyrics that follow the *sung* words exactly, install the vocal aligner:
+```bash
+pip install demucs faster-whisper
+```
+With these present, **Auto** mode isolates the vocals and aligns each lyric
+line to the audio automatically. Without them, lines are still placed on the
+timeline (evenly distributed) so the tool always produces a video.
+
+### Fluid "generating" animation
+While a video renders, a fluid/liquid simulation plays behind the progress
+panel (theme-colored metaballs drifting and merging) and fades out when the
+video is ready.
 
 > Note: AI image generation and stock search need free API keys in `.env`.
 > The fully-free path is **upload your own image** + a procedural fallback.
@@ -163,3 +177,5 @@ auto-shorts/
   of Flask's dev server.
 - `google-generativeai` is only needed if you set `GEMINI_API_KEY`; install it
   separately with `pip install google-generativeai` when required.
+- For **true vocal-synced lyrics** in Reel Auto mode, install
+  `pip install demucs faster-whisper` (CPU-capable, larger download).

@@ -59,8 +59,17 @@ def _synthesize_ambient(duration, out_path, seed=7):
     return out_path
 
 
-def get_music(duration, workdir):
-    """Return a path to a music file ~`duration` seconds long."""
+def get_music(duration, workdir, override=None):
+    """Return a path to a music file ~`duration` seconds long.
+    If `override` (a user-uploaded audio path) is given, loop it."""
+    if override:
+        out = workdir / "music.wav"
+        subprocess.run(
+            ["ffmpeg", "-y", "-stream_loop", "-1", "-i", str(override),
+             "-t", f"{duration:.2f}", "-c:a", "pcm_s16le", str(out)],
+            check=True, capture_output=True,
+        )
+        return out
     local = _local_music()
     if local:
         src = random.choice(local)

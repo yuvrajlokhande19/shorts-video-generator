@@ -62,9 +62,26 @@ def _pexels(topic, count):
         return []
 
 
-def get_clips(topic, timings, w, h, workdir):
-    """Return list of (clip_path, duration) aligned to each timing segment."""
+def get_clips(topic, timings, w, h, workdir, local_images=None):
+    """Return list of (clip_path, duration) aligned to each timing segment.
+    If `local_images` (list of image paths) is provided, those are used as
+    the backgrounds (cycled, cover-cropped) — gives a 'story' feel."""
     durations = [max(1.0, t["duration"]) for t in timings]
+    if local_images:
+        paths = []
+        for i, dur in enumerate(durations):
+            out = workdir / f"clip_{i:03d}.mp4"
+            src = local_images[i % len(local_images)]
+            subprocess.run(
+                ["ffmpeg", "-y", "-loop", "1", "-i", str(src),
+                 "-t", f"{dur:.3f}",
+                 "-vf", f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1",
+                 "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+                 str(out)],
+                check=True, capture_output=True,
+            )
+            paths.append((out, dur))
+        return paths
     local = _local_clips()
     remote = _pexels(topic, len(durations)) if not local else []
 

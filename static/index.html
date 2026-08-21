@@ -3,141 +3,256 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Auto Shorts — AI Video Generator</title>
+  <title>Auto Shorts — AI Video Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-  <header>
-    <h1>🎬 Auto&nbsp;Shorts</h1>
-    <p>Turn a topic into a finished short — or make a synced lyric reel.</p>
+  <canvas id="fluid"></canvas>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 4 20 12 6 20 6 4" fill="#fff" stroke="none"/></svg>
+      </span>
+      Auto&nbsp;Shorts
+    </div>
+    <div class="seg" id="seg">
+      <span class="seg-pill" id="segPill"></span>
+      <button class="seg-btn active" data-mode="short">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+        Create Short
+      </button>
+      <button class="seg-btn" data-mode="reel">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        Create Reel
+      </button>
+    </div>
   </header>
 
-  <nav class="tabs">
-    <button class="tab active" data-tab="script">🎙️ AI Script Reel</button>
-    <button class="tab" data-tab="lyric">🎵 Lyric Reel</button>
-  </nav>
-
   <main>
-    <!-- ================= AI SCRIPT REEL ================= -->
-    <section class="card tab-panel" id="panel-script">
-      <h2>1 · Your topic</h2>
-      <input id="topic" type="text" placeholder="e.g. the benefits of reading" value="the benefits of reading" />
+    <!-- ===================== CREATE SHORT ===================== -->
+    <section class="panel active" id="panel-short">
+      <div class="grid2">
+        <div class="card">
+          <span class="step-badge">1 · Topic</span>
+          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M3 12h18" stroke-linecap="round"/></svg> Topic &amp; voice</h3>
+          <input id="s_topic" type="text" placeholder="e.g. the benefits of reading" value="the benefits of reading" />
+          <div class="chips" id="s_chips">
+            <span class="chip">morning routine</span><span class="chip">why exercise matters</span>
+            <span class="chip">saving money tips</span><span class="chip">power of kindness</span>
+          </div>
 
-      <h2>2 · Format</h2>
-      <div class="row">
-        <label class="radio"><input type="radio" name="orient" value="vertical" checked /> 📱 Vertical (9:16)</label>
-        <label class="radio"><input type="radio" name="orient" value="horizontal" /> 🖥️ Horizontal (16:9)</label>
+          <div class="field-row">
+            <label>Format</label>
+            <div class="radio-cards" style="flex:1">
+              <label class="radio-card active" data-name="s_orient"><span class="dot"></span> Vertical 9:16</label>
+              <label class="radio-card" data-name="s_orient"><span class="dot"></span> Horizontal 16:9</label>
+            </div>
+            <input type="radio" name="s_orient" value="vertical" checked class="hidden"/>
+            <input type="radio" name="s_orient" value="horizontal" class="hidden"/>
+          </div>
+
+          <div class="field-row">
+            <label>Voice</label>
+            <select id="s_voice" style="flex:1"></select>
+          </div>
+          <label class="check"><input type="checkbox" id="s_use_ai" checked/> Use Gemini (falls back to template if no key)</label>
+        </div>
+
+        <div class="card">
+          <span class="step-badge alt">2 · Visuals</span>
+          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg> Visuals</h3>
+          <div class="radio-cards">
+            <label class="radio-card active" data-name="s_visual"><span class="dot"></span> Auto (stock by topic)</label>
+            <label class="radio-card" data-name="s_visual"><span class="dot"></span> Upload images</label>
+          </div>
+          <input type="radio" name="s_visual" value="auto" checked class="hidden"/>
+          <input type="radio" name="s_visual" value="upload" class="hidden"/>
+          <div id="s_upload" class="dropzone hidden">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div>Drop images here or click to browse</div>
+            <input id="s_images" type="file" accept="image/*" multiple class="hidden"/>
+          </div>
+
+          <h3 style="margin-top:18px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm12-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" stroke-linecap="round" stroke-linejoin="round"/></svg> Background music</h3>
+          <div class="radio-cards">
+            <label class="radio-card active" data-name="s_music"><span class="dot"></span> Auto ambient</label>
+            <label class="radio-card" data-name="s_music"><span class="dot"></span> Upload song</label>
+          </div>
+          <input type="radio" name="s_music" value="auto" checked class="hidden"/>
+          <input type="radio" name="s_music" value="upload" class="hidden"/>
+          <div id="s_music_up" class="dropzone hidden">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm12-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div>Drop a song or click to browse</div>
+            <input id="s_bgsong" type="file" accept="audio/*" class="hidden"/>
+          </div>
+          <div id="s_audio_prev"></div>
+        </div>
       </div>
 
-      <h2>3 · Voice &amp; AI</h2>
-      <div class="row">
-        <select id="voice"></select>
-        <label class="check"><input type="checkbox" id="use_ai" checked /> Use Gemini (falls back to template if no key)</label>
+      <div class="card">
+        <span class="step-badge">3 · Style</span>
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V5h16v2M9 5v14M15 5v14M4 19h16" stroke-linecap="round"/></svg> Subtitle style</h3>
+        <div class="colorgrid">
+          <label class="color-field">Font
+            <select id="s_font"><option>Arial</option><option>Verdana</option><option>Impact</option><option>Georgia</option><option>Comic Sans MS</option><option>Roboto</option></select>
+          </label>
+          <label class="color-field">Size <input id="s_size" type="number" value="60" min="20" max="140"/></label>
+          <label class="color-field">Text <input id="s_color" type="color" value="#ffffff"/></label>
+          <label class="color-field">Outline <input id="s_outline" type="color" value="#000000"/></label>
+          <label class="color-field">Position
+            <select id="s_pos"><option value="bottom">Bottom</option><option value="center">Center</option><option value="top">Top</option></select>
+          </label>
+          <label class="color-field">Music vol <input id="s_mvol" type="range" min="0" max="100" value="35"/></label>
+        </div>
+        <div class="radio-cards" style="margin-top:14px">
+          <label class="check"><input type="checkbox" id="s_bold" checked/> Bold</label>
+          <label class="check"><input type="checkbox" id="s_box" checked/> Box</label>
+          <label class="check"><input type="checkbox" id="s_hl"/> Karaoke highlight</label>
+        </div>
       </div>
 
-      <h2>4 · Subtitle style</h2>
-      <div class="grid">
-        <label>Font
-          <select id="sub_font">
-            <option>Arial</option><option>Verdana</option><option>Impact</option>
-            <option>Georgia</option><option>Comic Sans MS</option><option>Roboto</option>
-          </select>
-        </label>
-        <label>Size <input id="sub_size" type="number" value="60" min="20" max="140" /></label>
-        <label>Text color <input id="sub_color" type="color" value="#ffffff" /></label>
-        <label>Outline <input id="sub_outline" type="color" value="#000000" /></label>
-        <label>Position
-          <select id="sub_pos"><option value="bottom">Bottom</option><option value="center">Center</option><option value="top">Top</option></select>
-        </label>
-        <label class="check"><input type="checkbox" id="sub_bold" checked /> Bold</label>
-        <label class="check"><input type="checkbox" id="sub_box" checked /> Box behind text</label>
-        <label class="check"><input type="checkbox" id="sub_highlight" /> Karaoke highlight</label>
+      <button class="btn-primary" id="s_generate">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="6 4 20 12 6 20 6 4" fill="currentColor" stroke="none"/></svg>
+        Generate Short
+      </button>
+
+      <div class="progress" id="s_progress">
+        <div class="bar-track"><div class="bar-fill" id="s_bar"></div></div>
+        <ul class="steps" id="s_steps"></ul>
       </div>
 
-      <h2>5 · Music</h2>
-      <label>Background volume: <span id="mv_label">35%</span>
-        <input id="music_vol" type="range" min="0" max="100" value="35" />
-      </label>
-
-      <button id="generate">▶ Generate video</button>
-      <h2>Progress</h2>
-      <ul id="log" class="log"></ul>
-      <div id="result" class="result hidden">
-        <h2 id="result_title"></h2>
-        <video id="player" controls playsinline></video>
-        <a id="download" class="btn" download>⬇ Download</a>
+      <div class="result" id="s_result">
+        <video id="s_player" controls playsinline></video>
+        <a id="s_download" class="btn-download" download>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Download
+        </a>
       </div>
     </section>
 
-    <!-- ================= LYRIC REEL ================= -->
-    <section class="card tab-panel hidden" id="panel-lyric">
-      <h2>1 · Format</h2>
-      <div class="row">
-        <label class="radio"><input type="radio" name="lorient" value="vertical" checked /> 📱 Vertical (9:16)</label>
-        <label class="radio"><input type="radio" name="lorient" value="horizontal" /> 🖥️ Horizontal (16:9)</label>
+    <!-- ===================== CREATE REEL ===================== -->
+    <section class="panel" id="panel-reel">
+      <div class="hint-banner">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm12-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Drop a song and we'll <b>write &amp; sync the lyrics</b> for you automatically.
       </div>
+      <div class="grid2">
+        <div class="card">
+          <span class="step-badge">1 · Song</span>
+          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm12-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" stroke-linecap="round" stroke-linejoin="round"/></svg> Background image</h3>
+          <div class="radio-cards">
+            <label class="radio-card" data-name="r_img"><span class="dot"></span> Upload</label>
+            <label class="radio-card active" data-name="r_img"><span class="dot"></span> Stock search</label>
+            <label class="radio-card" data-name="r_img"><span class="dot"></span> AI image</label>
+            <label class="radio-card" data-name="r_img"><span class="dot"></span> Gradient</label>
+          </div>
+          <input type="radio" name="r_img" value="upload" class="hidden"/>
+          <input type="radio" name="r_img" value="stock" checked class="hidden"/>
+          <input type="radio" name="r_img" value="ai" class="hidden"/>
+          <input type="radio" name="r_img" value="procedural" class="hidden"/>
 
-      <h2>2 · Background image</h2>
-      <div class="row">
-        <label class="radio"><input type="radio" name="imode" value="upload" checked /> Upload</label>
-        <label class="radio"><input type="radio" name="imode" value="stock" /> Stock search</label>
-        <label class="radio"><input type="radio" name="imode" value="ai" /> AI image</label>
-        <label class="radio"><input type="radio" name="imode" value="procedural" /> Gradient</label>
-      </div>
-      <div id="im-upload" class="im-box">
-        <input id="image_file" type="file" accept="image/*" />
-      </div>
-      <div id="im-stock" class="im-box hidden">
-        <div class="row">
-          <input id="image_query" type="text" placeholder="e.g. faceless couple, night city" />
-          <button id="img_search" type="button" class="mini">Search</button>
+          <div id="r_upload" class="dropzone hidden">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div>Drop an image or click</div>
+            <input id="r_image_file" type="file" accept="image/*" class="hidden"/>
+          </div>
+          <div id="r_img_search" >
+            <div class="field-row">
+              <input id="r_image_query" type="text" placeholder="e.g. faceless couple, night city" style="flex:1"/>
+              <button class="btn-primary" id="r_img_btn" style="width:auto; padding:10px 16px; margin:0">Search</button>
+            </div>
+            <div id="r_img_results" class="thumbs"></div>
+          </div>
+          <div id="r_img_ai" class="hidden">
+            <input id="r_image_prompt" type="text" placeholder="e.g. faceless boy and girl watching each other, minimal illustration"/>
+            <p class="hint">Needs GEMINI_API_KEY in .env.</p>
+          </div>
         </div>
-        <div id="img_results" class="thumbs"></div>
-      </div>
-      <div id="im-ai" class="im-box hidden">
-        <input id="image_prompt" type="text" placeholder="e.g. faceless boy and girl watching each other, minimal illustration" />
-        <p class="hint">Needs GEMINI_API_KEY in .env.</p>
+
+        <div class="card">
+          <span class="step-badge alt">2 · Visuals</span>
+          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm12-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" stroke-linecap="round" stroke-linejoin="round"/></svg> Song &amp; format</h3>
+          <div class="field-row">
+            <label>Format</label>
+            <div class="radio-cards" style="flex:1">
+              <label class="radio-card active" data-name="r_orient"><span class="dot"></span> Vertical 9:16</label>
+              <label class="radio-card" data-name="r_orient"><span class="dot"></span> Horizontal 16:9</label>
+            </div>
+            <input type="radio" name="r_orient" value="vertical" checked class="hidden"/>
+            <input type="radio" name="r_orient" value="horizontal" class="hidden"/>
+          </div>
+          <div class="dropzone" id="r_song_dz" style="margin-top:14px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm12-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div>Drop a song or click to browse</div>
+            <input id="r_song_file" type="file" accept="audio/*" class="hidden"/>
+          </div>
+          <div id="r_audio_prev"></div>
+          <button class="btn-primary" id="r_song_btn" style="width:auto; padding:10px 16px; margin-top:12px; font-size:13px">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm12-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Suggest free songs
+          </button>
+          <ul class="steps" id="r_song_list" style="margin-top:10px"></ul>
+        </div>
       </div>
 
-      <h2>3 · Song (required)</h2>
-      <input id="song_file" type="file" accept="audio/*" />
-      <div class="row" style="margin-top:8px">
-        <button id="song_suggest" type="button" class="mini">Suggest free songs</button>
-      </div>
-      <ul id="song_list" class="log"></ul>
-
-      <h2>4 · Lyrics</h2>
-      <div class="row">
-        <label class="radio"><input type="radio" name="lmode" value="text" checked /> Paste text</label>
-        <label class="radio"><input type="radio" name="lmode" value="file" /> Upload file (.lrc/.srt/.txt)</label>
-      </div>
-      <textarea id="lyrics_text" rows="6" placeholder="Paste lyrics here, one line per line.&#10;For perfect sync, upload an .lrc or .srt with timestamps."></textarea>
-      <input id="lyrics_file" type="file" accept=".lrc,.srt,.txt" class="hidden" />
-      <label class="check" style="margin-top:6px"><input type="checkbox" id="auto_sync" /> Auto-sync plain lyrics to the song (needs demucs + faster-whisper)</label>
-
-      <h2>5 · Style</h2>
-      <div class="grid">
-        <label>Font <select id="lyric_font"></select></label>
-        <label>Size <input id="lyric_size" type="number" value="72" min="20" max="160" /></label>
-        <label>Text color <input id="lyric_text_color" type="color" value="#ffffff" /></label>
-        <label>Highlight (sung) <input id="lyric_hl_color" type="color" value="#ff5ca8" /></label>
-        <label>Outline <input id="lyric_outline" type="color" value="#000000" /></label>
-        <label>Position
-          <select id="lyric_pos"><option value="center">Center</option><option value="bottom">Bottom</option><option value="top">Top</option></select>
+      <div class="card">
+        <span class="step-badge">3 · Lyrics</span>
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V5h16v2M9 5v14M15 5v14M4 19h16" stroke-linecap="round"/></svg> Lyrics</h3>
+        <div class="radio-cards">
+          <label class="radio-card active" data-name="r_lyr"><span class="dot"></span> Auto (AI + sync)</label>
+          <label class="radio-card" data-name="r_lyr"><span class="dot"></span> Paste text</label>
+          <label class="radio-card" data-name="r_lyr"><span class="dot"></span> Upload .lrc/.srt</label>
+        </div>
+        <input type="radio" name="r_lyr" value="auto" checked class="hidden"/>
+        <input type="radio" name="r_lyr" value="text" class="hidden"/>
+        <input type="radio" name="r_lyr" value="file" class="hidden"/>
+        <label style="margin-top:12px">Song theme / mood (used to write lyrics)
+          <input id="r_theme" type="text" placeholder="e.g. lofi, missing someone, late-night drive"/>
         </label>
-        <label class="check"><input type="checkbox" id="lyric_bold" checked /> Bold</label>
-        <label class="check"><input type="checkbox" id="lyric_box" /> Box behind text</label>
-        <label class="check"><input type="checkbox" id="lyric_preview" checked /> Show next line</label>
-        <label class="check"><input type="checkbox" id="lyric_kenburns" checked /> Subtle motion (Ken Burns)</label>
+        <textarea id="r_lyrics" rows="5" placeholder="Paste lyrics, one line per line. Upload .lrc/.srt for perfect sync." class="hidden" style="margin-top:12px"></textarea>
+        <input id="r_lyrics_file" type="file" accept=".lrc,.srt,.txt" class="hidden"/>
+        <label class="check" style="margin-top:8px"><input type="checkbox" id="r_auto"/> Force vocal auto-sync (needs demucs + faster-whisper)</label>
       </div>
 
-      <button id="generate_lyric">▶ Generate lyric reel</button>
-      <h2>Progress</h2>
-      <ul id="log_lyric" class="log"></ul>
-      <div id="result_lyric" class="result hidden">
-        <h2 id="result_lyric_title"></h2>
-        <video id="player_lyric" controls playsinline></video>
-        <a id="download_lyric" class="btn" download>⬇ Download</a>
+      <div class="card">
+        <span class="step-badge alt">4 · Style</span>
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V5h16v2M9 5v14M15 5v14M4 19h16" stroke-linecap="round"/></svg> Style</h3>
+        <div class="colorgrid">
+          <label class="color-field">Font <select id="r_font"></select></label>
+          <label class="color-field">Size <input id="r_size" type="number" value="72" min="20" max="160"/></label>
+          <label class="color-field">Text <input id="r_tcolor" type="color" value="#ffffff"/></label>
+          <label class="color-field">Highlight <input id="r_hcolor" type="color" value="#ff5ca8"/></label>
+          <label class="color-field">Outline <input id="r_ocolor" type="color" value="#000000"/></label>
+          <label class="color-field">Position
+            <select id="r_pos"><option value="center">Center</option><option value="bottom">Bottom</option><option value="top">Top</option></select>
+          </label>
+        </div>
+        <div class="radio-cards" style="margin-top:14px">
+          <label class="check"><input type="checkbox" id="r_bold" checked/> Bold</label>
+          <label class="check"><input type="checkbox" id="r_box"/> Box</label>
+          <label class="check"><input type="checkbox" id="r_preview" checked/> Show next line</label>
+          <label class="check"><input type="checkbox" id="r_kenburns" checked/> Subtle motion</label>
+        </div>
+      </div>
+
+      <button class="btn-primary" id="r_generate">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="6 4 20 12 6 20 6 4" fill="currentColor" stroke="none"/></svg>
+        Generate Reel
+      </button>
+
+      <div class="progress" id="r_progress">
+        <div class="bar-track"><div class="bar-fill" id="r_bar"></div></div>
+        <ul class="steps" id="r_steps"></ul>
+      </div>
+
+      <div class="result" id="r_result">
+        <video id="r_player" controls playsinline></video>
+        <a id="r_download" class="btn-download" download>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Download
+        </a>
       </div>
     </section>
   </main>
