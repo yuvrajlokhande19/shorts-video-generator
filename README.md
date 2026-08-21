@@ -54,6 +54,21 @@ python app.py
 Open <http://127.0.0.1:5000> in your browser, type a topic, and hit
 **Generate video**.
 
+### One-click launcher (no terminal)
+`start.vbs` launches the server hidden and opens your browser automatically.
+Create a Desktop shortcut to it (or run it directly):
+
+```powershell
+# from the project folder, pin a shortcut to your Desktop:
+$ws = New-Object -ComObject WScript.Shell
+$lnk = $ws.CreateShortcut("$([Environment]::GetFolderPath('Desktop'))\Auto Shorts.lnk")
+$lnk.TargetPath = "$PWD\start.vbs"; $lnk.WorkingDirectory = "$PWD"; $lnk.Save()
+```
+
+Double-click **Auto Shorts** on your Desktop — the app opens in your browser.
+To stop the server, close the background `python.exe` (Task Manager), or use
+`start.bat` instead, which shows a terminal window you can stop with `Ctrl+C`.
+
 ### Using a Gemini API key (recommended)
 Get a free key at <https://aistudio.google.com/apikey> and put it in `.env`:
 ```
