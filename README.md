@@ -115,12 +115,15 @@ with almost no effort:
   the song into a 9:16 (or 16:9) MP4.
 
 ### Real vocal sync (works offline, no heavy deps)
-**Auto** mode transcribes the song's actual vocals with **Vosk** (a lightweight,
-torch-free speech engine) and aligns the real lyrics to the audio — no API key
-and no GPU needed. Hindi/English models auto-download on first use (≈40 MB each,
-cached in `assets/vosk/`). For even better isolation of vocals you can optionally
-install `pip install demucs faster-whisper`; the app will then use that path
-automatically when available.
+**Auto** mode extracts the song's *actual* sung lyrics. It runs the audio
+through lightweight vocal-isolation preprocessing (ffmpeg: mono 16 kHz,
+vocal band-pass, noise gate, normalization) and then transcribes with
+**faster-whisper** (`small`, CPU/int8 — **no torch/GPU needed**). Word-level
+timestamps are grouped into timed lines and (for Hinglish) romanized from
+Devanagari. The first run downloads the Whisper model (~460 MB, cached by
+HuggingFace). If faster-whisper is unavailable, it falls back to the tiny
+**Vosk** engine (`assets/vosk/`, ~40 MB each). Either way, no API key and no
+GPU are required.
 
 ### Fluid "generating" animation
 While a video renders, a fluid/liquid simulation plays behind the progress
