@@ -19,6 +19,9 @@ import src.song_suggest as song_suggest
 
 app = Flask(__name__, static_folder=None)
 
+# In-memory store of finished lyric reels so they can be re-edited/re-rendered.
+LYRIC_JOBS = {}
+
 
 def _ev(kind, message, **extra):
     payload = {"type": kind, "message": message, **extra}
@@ -44,7 +47,9 @@ def run_pipeline(opts):
 
     try:
         yield _ev("progress", "Generating script…")
-        script = script_gen.generate_script(topic, target_duration=45, use_ai=use_ai)
+        script = script_gen.generate_script(topic, target_duration=45,
+                                            use_ai=use_ai,
+                                            lang=opts.get("script_lang", "english"))
         segments = [{"text": s} for s in script["segments"]]
         if not segments:
             yield _ev("error", "No script segments produced.")
@@ -170,6 +175,7 @@ def api_generate():
         "orientation": orientation,
         "voice": request.form.get("voice", "en-US-AriaNeural"),
         "use_ai": bool(request.form.get("use_ai")),
+        "script_lang": request.form.get("script_lang", "english"),
         "music_volume": float(request.form.get("music_volume", 35)),
         "subtitle_style": {
             "font": request.form.get("font", "Arial"),
@@ -193,6 +199,18 @@ def api_generate():
 
 @app.route("/api/lyric/generate", methods=["POST"])
 def api_lyric_generate():
+    is_draft = bool(request.form.get("draft"))
+    lyrics_lang = request.form.get("lyrics_lang", "hinglish")
+    theme = request.form.get("theme", "")
+
+    # Draft mode: just write the lyrics (no song required).
+    if is_draft:
+        def draft():
+            lines = lyrics_align.generate_lyrics(theme, n=12, lang=lyrics_lang)
+            yield _ev("done", "Lyrics drafted", type2="lyrics",
+                      lyrics="\n".join(lines))
+        return Response(draft(), mimetype="text/event-stream")
+
     if "song_file" not in request.files:
         return jsonify({"error": "song_file is required"}), 400
 
@@ -223,7 +241,6 @@ def api_lyric_generate():
     else:
         lyrics_text = request.form.get("lyrics_text", "")
         lyrics_filename = None
-    theme = request.form.get("theme", "")
 
     style = {
         "font": request.form.get("font", "Dancing Script"),
@@ -247,6 +264,7 @@ def api_lyric_generate():
         "lyrics_text": lyrics_text,
         "lyrics_filename": lyrics_filename,
         "lyrics_mode": lyrics_mode,
+        "lyrics_lang": lyrics_lang,
         "theme": theme,
         "style": style,
         "auto_sync": bool(request.form.get("auto_sync")),
@@ -263,58 +281,155 @@ def api_lyric_generate():
 def run_lyric_pipeline(opts):
     workdir = config.TEMP_DIR / uuid.uuid4().hex[:8]
     workdir.mkdir(parents=True, exist_ok=True)
+    job_id = uuid.uuid4().hex[:8]
     try:
         yield _ev("progress", "Reading song…")
         song_path = opts["song_path"]
         duration = lyrics_align.song_duration(song_path)
 
         yield _ev("progress", "Preparing background image…")
-        image_path = image_source.get_image(
-            opts["image_mode"], workdir, opts["w"], opts["h"],
-            uploaded=opts.get("uploaded_image"),
-            image_url=opts.get("image_url"),
-            query=opts.get("image_query"),
-            prompt=opts.get("image_prompt"),
-        )
+        if opts["image_mode"] == "auto":
+            image_path = image_source.get_images_auto(
+                opts.get("theme", ""), opts.get("lyrics_text", ""),
+                workdir, opts["w"], opts["h"])
+        else:
+            image_path = image_source.get_image(
+                opts["image_mode"], workdir, opts["w"], opts["h"],
+                uploaded=opts.get("uploaded_image"),
+                image_url=opts.get("image_url"),
+                query=opts.get("image_query"),
+                prompt=opts.get("image_prompt"),
+            )
 
         yield _ev("progress", "Processing lyrics…")
         orig_mode = opts.get("lyrics_mode", "text")
         lyrics_text = opts.get("lyrics_text", "")
+        transcribed = None
         if orig_mode == "auto":
-            yield _ev("progress", "Generating lyrics from the song's theme…")
-            gen_lines = lyrics_align.generate_lyrics(opts.get("theme", ""))
-            lyrics_text = "\n".join(gen_lines)
-            opts["auto_sync"] = True  # force vocal sync in auto mode
-        lines = lyrics_align.parse_lyrics(lyrics_text, opts.get("lyrics_filename"))
-        if not lines:
-            yield _ev("error", "No lyrics found.")
-            return
-        has_times = any(ln["start"] is not None for ln in lines)
-        if opts.get("auto_sync") and not has_times:
+            yield _ev("progress", "Listening to the song and writing its real lyrics…")
             try:
-                lines = lyrics_align.auto_align(lines, song_path)
-                yield _ev("progress", "Auto-synced lyrics to the song (vocals aligned).")
+                wl = {"hinglish": "hi", "hindi": "hi", "english": "en"}.get(
+                    opts.get("lyrics_lang", "hinglish"), None)
+                transcribed = lyrics_align.transcribe_lyrics(song_path, lang=wl)
+                if opts.get("lyrics_lang") == "hinglish":
+                    transcribed = lyrics_align.romanize_lines(transcribed)
+                yield _ev("progress", "Synced the song's own lyrics (vocals transcribed).")
             except Exception as exc:
-                yield _ev("progress", f"Vocal auto-sync unavailable ({exc}); timing evenly.")
-        lines = lyrics_align.finalize_timings(lines, duration)
+                print(f"[lyrics] transcription failed: {exc}")
+                yield _ev("progress", f"Could not read the song's lyrics ({exc}); writing from theme instead.")
+
+        if transcribed:
+            lines = transcribed
+        else:
+            if orig_mode == "auto":
+                gen_lines = lyrics_align.generate_lyrics(
+                    opts.get("theme", ""), n=12, lang=opts.get("lyrics_lang", "hinglish"))
+                lyrics_text = "\n".join(gen_lines)
+                opts["auto_sync"] = True  # force vocal sync in auto mode
+            lines = lyrics_align.parse_lyrics(lyrics_text, opts.get("lyrics_filename"))
+            if not lines:
+                yield _ev("error", "No lyrics found.")
+                return
+            has_times = any(ln["start"] is not None for ln in lines)
+            if opts.get("auto_sync") and not has_times:
+                try:
+                    lines = lyrics_align.auto_align(lines, song_path)
+                    yield _ev("progress", "Auto-synced lyrics to the song (vocals aligned).")
+                except Exception as exc:
+                    yield _ev("progress", f"Vocal auto-sync unavailable ({exc}); timing evenly.")
+            lines = lyrics_align.finalize_timings(lines, duration)
+        final_lyrics = "\n".join(ln["text"] for ln in lines)
 
         yield _ev("progress", "Building styled subtitles…")
         ass_path = workdir / "lyrics.ass"
         lyric_renderer.build_ass(lines, opts["style"], opts["w"], opts["h"], ass_path)
 
         yield _ev("progress", "Rendering video…")
-        out_name = f"lyric_{uuid.uuid4().hex[:8]}_{opts['orientation']}.mp4"
+        out_name = f"lyric_{job_id}_{opts['orientation']}.mp4"
         out_path = config.OUTPUT_DIR / out_name
         lyric_renderer.render(image_path, song_path, ass_path,
                               opts["w"], opts["h"], out_path, duration,
                               kenburns=opts["kenburns"])
 
+        # remember the job so it can be re-edited/re-rendered
+        LYRIC_JOBS[job_id] = {
+            "song_path": str(song_path),
+            "image_path": [str(p) for p in lyric_renderer._as_list(image_path)],
+            "style": opts["style"],
+            "lyrics": final_lyrics,
+            "lyrics_lang": opts.get("lyrics_lang", "hinglish"),
+            "w": opts["w"], "h": opts["h"],
+            "orientation": opts["orientation"],
+            "kenburns": opts["kenburns"],
+        }
+
         yield _ev("done", "Lyric reel ready!", url=f"/output/{out_name}",
-                  duration=round(duration, 1))
+                  duration=round(duration, 1), job_id=job_id, lyrics=final_lyrics)
     except Exception as exc:
         import traceback
         traceback.print_exc()
         yield _ev("error", f"Failed: {exc}")
+
+
+@app.route("/api/lyric/regenerate", methods=["POST"])
+def api_lyric_regenerate():
+    """Re-render a previously created reel with edited lyrics / style."""
+    job_id = request.form.get("job_id")
+    job = LYRIC_JOBS.get(job_id)
+    if not job:
+        return jsonify({"error": "Unknown job id"}), 400
+
+    lyrics_text = request.form.get("lyrics_text", job["lyrics"]).strip()
+    style = dict(job["style"])
+    for fld, key in (("font", "font"), ("size", "size"), ("text_color", "text_color"),
+                     ("highlight_color", "highlight_color"),
+                     ("outline_color", "outline_color"), ("position", "position"),
+                     ("bold", "bold"), ("box", "box"), ("preview", "preview")):
+        if request.form.get(fld) not in (None, ""):
+            val = request.form.get(fld)
+            if fld in ("size",):
+                val = int(val)
+            elif fld in ("bold", "box", "preview"):
+                val = val in ("on", "true", "1")
+            style[key] = val
+    kenburns = request.form.get("kenburns", "on") in ("on", "true", "1")
+
+    def gen():
+        workdir = config.TEMP_DIR / uuid.uuid4().hex[:8]
+        workdir.mkdir(parents=True, exist_ok=True)
+        new_id = uuid.uuid4().hex[:8]
+        try:
+            yield _ev("progress", "Reading song…")
+            song_path = job["song_path"]
+            duration = lyrics_align.song_duration(song_path)
+            lines = lyrics_align.parse_lyrics(lyrics_text)
+            if not lines:
+                yield _ev("error", "No lyrics found.")
+                return
+            lines = lyrics_align.finalize_timings(lines, duration)
+
+            yield _ev("progress", "Building styled subtitles…")
+            ass_path = workdir / "lyrics.ass"
+            lyric_renderer.build_ass(lines, style, job["w"], job["h"], ass_path)
+
+            yield _ev("progress", "Rendering video…")
+            out_name = f"lyric_{new_id}_{job['orientation']}.mp4"
+            out_path = config.OUTPUT_DIR / out_name
+            lyric_renderer.render(job["image_path"], song_path, ass_path,
+                                  job["w"], job["h"], out_path, duration,
+                                  kenburns=kenburns)
+
+            # update the stored job with the new edits
+            LYRIC_JOBS[new_id] = dict(job, lyrics=lyrics_text, style=style,
+                                      kenburns=kenburns)
+            yield _ev("done", "Reel updated!", url=f"/output/{out_name}",
+                      duration=round(duration, 1), job_id=new_id, lyrics=lyrics_text)
+        except Exception as exc:
+            import traceback
+            traceback.print_exc()
+            yield _ev("error", f"Failed: {exc}")
+
+    return Response(gen(), mimetype="text/event-stream")
 
 
 if __name__ == "__main__":

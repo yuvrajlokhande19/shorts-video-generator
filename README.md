@@ -16,7 +16,8 @@ Built with **Python + Flask** and a tiny vanilla-JS web UI.
 
 - **AI script generation** via Google Gemini (with a built-in free template
   fallback so it works even with **no API key**).
-- **Free text-to-speech** using `edge-tts` (no key, many voices).
+- **Free text-to-speech** using `edge-tts` (no key, many voices), including
+  **Indian voices** and **Hinglish / Hindi** script generation for Shorts.
 - **Stock footage** from Pexels / Pixabay when you provide a free API key,
   otherwise automatically generated procedural background clips (also free).
 - **Burned-in subtitles** with customizable font, size, color, outline,
@@ -93,10 +94,12 @@ generates gradient background clips automatically.
 Turn a **song** into a synced, stylized lyric video (Instagram Reel / TikTok)
 with almost no effort:
 
-- **Auto mode (default):** just drop a **song** and (optionally) a **theme/mood**
-  (e.g. *"lofi, missing someone"*). The app **writes the lyrics for you**
-  (Gemini, with a built-in template fallback) and **auto-syncs them to the
-  song**. No copy-pasting required.
+- **Auto mode (default):** drop a **song** and the app **listens to it** — it
+  isolates the vocals and transcribes the *real* sung words with an offline speech
+  engine (Vosk), then **auto-syncs those exact lyrics to the music**. Choose the
+  lyric language: **Hinglish** (Hindi written in Latin script, e.g. *"kaise ho"*),
+  **Hindi** (Devanagari), or **English**. You can also type a theme to guide it.
+  No copy-pasting required.
 - **Lyrics options:** *Auto* (AI + sync), *Paste text*, or *Upload `.lrc`/`.srt`*
   for frame-perfect sync.
 - **Background image:** upload your own, **stock search** (Pexels/Pixabay,
@@ -111,14 +114,13 @@ with almost no effort:
 - **Render:** ffmpeg burns the karaoke ASS subtitles over the image and muxes
   the song into a 9:16 (or 16:9) MP4.
 
-### Real vocal sync (optional but recommended)
-For lyrics that follow the *sung* words exactly, install the vocal aligner:
-```bash
-pip install demucs faster-whisper
-```
-With these present, **Auto** mode isolates the vocals and aligns each lyric
-line to the audio automatically. Without them, lines are still placed on the
-timeline (evenly distributed) so the tool always produces a video.
+### Real vocal sync (works offline, no heavy deps)
+**Auto** mode transcribes the song's actual vocals with **Vosk** (a lightweight,
+torch-free speech engine) and aligns the real lyrics to the audio — no API key
+and no GPU needed. Hindi/English models auto-download on first use (≈40 MB each,
+cached in `assets/vosk/`). For even better isolation of vocals you can optionally
+install `pip install demucs faster-whisper`; the app will then use that path
+automatically when available.
 
 ### Fluid "generating" animation
 While a video renders, a fluid/liquid simulation plays behind the progress

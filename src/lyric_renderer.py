@@ -94,8 +94,8 @@ def build_ass(lines, style, w, h, out_path):
 
 
 def render(image_path, song_path, ass_path, w, h, out_path, duration,
-           kenburns=True):
-    image_path = str(Path(image_path).resolve())
+            kenburns=True):
+    image_path = [str(Path(p).resolve()) for p in _as_list(image_path)]
     song_path = str(Path(song_path).resolve())
     out_path = str(Path(out_path).resolve())
     # relative fonts path (avoids Windows drive-colon breaking the filter parser)
@@ -103,25 +103,49 @@ def render(image_path, song_path, ass_path, w, h, out_path, duration,
     fonts_dir = os.path.relpath(config.FONTS_DIR, work).replace("\\", "/")
     ass_name = Path(ass_path).name
 
-    filt = (
-        f"[0:v]scale=iw*max({w}/iw\\,{h}/ih):ih*max({w}/iw\\,{h}/ih)[s];"
-        f"[s]crop={w}:{h}[s0]"
-    )
+    # Build the base video stream from one image (looped) or a slideshow.
+    if len(image_path) <= 1:
+        pre = (
+            f"[0:v]scale=iw*max({w}/iw\\,{h}/ih):ih*max({w}/iw\\,{h}/ih)[s];"
+            f"[s]crop={w}:{h}[s0]"
+        )
+        input_args = ["-framerate", "30", "-loop", "1", "-i", image_path[0]]
+    else:
+        # slideshow: each image shown for an equal slice of the song
+        slice_dur = duration / len(image_path)
+        list_path = work / "slides.txt"
+        with open(list_path, "w", encoding="utf-8") as f:
+            for p in image_path:
+                f.write(f"file '{Path(p).name}'\n")
+                f.write(f"duration {slice_dur:.3f}\n")
+        pre = (
+            f"[0:v]scale=iw*max({w}/iw\\,{h}/ih):ih*max({w}/iw\\,{h}/ih)[s];"
+            f"[s]crop={w}:{h}[s0]"
+        )
+        input_args = ["-f", "concat", "-safe", "0", "-r", "30",
+                      "-i", str(list_path)]
+
     if kenburns:
-        filt += (
+        pre += (
             f";[s0]zoompan=z='min(1.0+0.00035*on,1.18)':d=1:s={w}x{h}:fps=30,"
             f"setsar=1[v]"
         )
     else:
-        filt += ";[s0]setsar=1[v]"
-    filt += f";[v]subtitles={ass_name}:fontsdir={fonts_dir}[vout]"
+        pre += ";[s0]setsar=1[v]"
+    pre += f";[v]subtitles={ass_name}:fontsdir={fonts_dir}[vout]"
 
     subprocess.run(
-        ["ffmpeg", "-y", "-framerate", "30", "-loop", "1", "-i", str(image_path),
-         "-i", str(song_path), "-filter_complex", filt,
-         "-map", "[vout]", "-map", "1:a", "-c:v", "libx264", "-preset", "veryfast",
-         "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "aac",
+        ["ffmpeg", "-y", *input_args, "-i", str(song_path),
+         "-filter_complex", pre, "-map", "[vout]", "-map", "1:a",
+         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+         "-pix_fmt", "yuv420p", "-c:a", "aac",
          "-shortest", "-t", f"{duration:.2f}", str(out_path)],
-        check=True, cwd=Path(ass_path).parent, capture_output=True,
+        check=True, cwd=work, capture_output=True,
     )
     return out_path
+
+
+def _as_list(x):
+    if isinstance(x, (list, tuple)):
+        return list(x)
+    return [x]

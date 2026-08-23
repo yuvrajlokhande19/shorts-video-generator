@@ -6,3 +6,9 @@ __pycache__/
 output/
 temp/
 .DS_Store
+
+# Vosk models auto-download on first use (large)
+assets/vosk/
+# Generated/optional asset dirs
+assets/clips/
+assets/music/

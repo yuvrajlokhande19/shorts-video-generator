@@ -141,16 +141,33 @@ def detect_format(filename, text):
     return "txt"
 
 
-def generate_lyrics(theme, n=12):
-    """Generate original lyric lines for a theme via Gemini (free template fallback)."""
+def generate_lyrics(theme, n=12, lang="hinglish"):
+    """Generate original lyric lines for a theme via Gemini (free template fallback).
+
+    lang: "english" | "hinglish" (Hindi in Latin script) | "hindi" (Devanagari).
+    For Hindi songs, use "hinglish" so the sung words read naturally in Latin text.
+    """
     if config.GEMINI_API_KEY:
         try:
             import google.generativeai as genai
             genai.configure(api_key=config.GEMINI_API_KEY)
             model = genai.GenerativeModel(config.GEMINI_MODEL)
+            if lang == "hinglish":
+                lang_note = (
+                    "Write the lyrics in HINGLISH: Hindi written in the Latin/English "
+                    "alphabet (e.g. 'Kaise ho', 'Dil mera', 'Tu hi hai meri zindagi', "
+                    "'Raaton ko tanha'). Use common Hindi words transliterated. "
+                    "Do NOT use Devanagari script."
+                )
+            elif lang == "hindi":
+                lang_note = (
+                    "Write the lyrics in Hindi using the Devanagari script only."
+                )
+            else:
+                lang_note = "Write the lyrics in English."
             prompt = (
                 f"Write original song lyrics for a short video (Instagram Reel / TikTok) "
-                f"about: {theme}.\nReturn STRICT JSON only, no markdown: "
+                f"about: {theme}.\n{lang_note}\nReturn STRICT JSON only, no markdown: "
                 f'{{"lines": [string, ...]}} with about {n} short lines '
                 f"(max 8 words each), emotional and rhythmic, one line per caption."
             )
@@ -162,11 +179,33 @@ def generate_lyrics(theme, n=12):
                 return lines
         except Exception as exc:
             print(f"[lyrics] Gemini generation failed ({exc}); using template.")
-    return _template_lyrics(theme)
+    return _template_lyrics(theme, lang)
 
 
-def _template_lyrics(theme):
+def _template_lyrics(theme, lang="hinglish"):
     t = (theme or "this feeling").strip().title()
+    if lang == "hindi":
+        return [
+            f"जब रात चुप है, तो तेरी याद आती है",
+            "अँधेरे में तेरा नाम गूँजता है",
+            "हम वो गाने थे जो दुनिया भूल गई",
+            "बारिश में नाचा करते थे हम तन्हा",
+            "पल को थाम ले पहले वो काला पड़े",
+            "कहीं तारों को अब भी हमारी धुन याद है",
+            "अगर इश्क़ एक शब्द है, तो सच लिख दे मुझे",
+            "मैं धीरे से गाऊँगा, तन्हा चाँद में",
+        ]
+    if lang == "hinglish":
+        return [
+            f"Jab raat chup hai, tab teri yaad aati hai",
+            "Andhere mein tera naam goonjta hai",
+            "Hum wo gaane the jo duniya bhool gayi",
+            "Barish mein naacha karte the hum tanha",
+            "Pal ko thaam le pehle wo kaala pade",
+            "Kahin taaron ko abhi bhi hamari dhun yaad hai",
+            "Agar ishq ek lafz hai, toh sach likh de mujhe",
+            "Main dheere se gaaunga, tanha chaand mein",
+        ]
     return [
         f"When the night is quiet, I think of {t}",
         "Every echo in the dark sounds like your name",
@@ -256,3 +295,193 @@ def auto_align(lines, song_path):
             ]
         idx = max(idx, end_j)
     return lines
+
+
+def transcribe_lyrics(song_path, lang=None):
+    """Extract the REAL sung lyrics from a song with word-level timestamps.
+
+    Uses faster-whisper (with vocal isolation via demucs) when available,
+    otherwise falls back to the lightweight Vosk engine (no torch needed)."""
+    try:
+        import torch  # noqa: F401
+        from faster_whisper import WhisperModel  # noqa: F401
+        return _transcribe_whisper(song_path, lang)
+    except Exception:
+        pass
+    return _transcribe_vosk(song_path, lang)
+
+
+def _lang_code(lang):
+    return {"hinglish": "hi", "hindi": "hi", "english": "en", "hi": "hi", "en": "en"}.get(lang, "en")
+
+
+def _group_words(words, gap=0.8, max_words=9):
+    lines, cur = [], []
+    for w in words:
+        if cur and (w["start"] - cur[-1]["end"] > gap or len(cur) >= max_words):
+            lines.append(_mkline(cur))
+            cur = []
+        cur.append(w)
+    if cur:
+        lines.append(_mkline(cur))
+    return lines
+
+
+def _mkline(ws):
+    return {
+        "text": " ".join(w["word"] for w in ws).strip(),
+        "start": ws[0]["start"],
+        "end": ws[-1]["end"],
+        "words": ws,
+    }
+
+
+def _transcribe_whisper(song_path, lang=None):
+    import tempfile
+    from pathlib import Path
+
+    from demucs.apply import apply_model, load_model
+    from demucs.pretrained import get_model
+    from faster_whisper import WhisperModel
+
+    tmp = Path(tempfile.mkdtemp())
+    model = get_model("htdemucs")
+    apply_model(model, str(song_path), str(tmp / "vocals"), device="cpu")
+    vocal = tmp / "vocals" / "vocals.wav"
+    wmodel = WhisperModel("base", device="cpu", compute_type="int8")
+    segs, _ = wmodel.transcribe(str(vocal), language=lang, word_timestamps=True)
+    lines = []
+    for s in segs:
+        words = [{"word": w.word, "start": w.start, "end": w.end} for w in s.words]
+        if not words:
+            continue
+        lines.append({
+            "text": s.text.strip(),
+            "start": words[0]["start"],
+            "end": words[-1]["end"],
+            "words": words,
+        })
+    if not lines:
+        raise RuntimeError("no speech detected")
+    return lines
+
+
+_VOSK_MODELS = {
+    "hi": "vosk-model-small-hi-0.22",
+    "en": "vosk-model-small-en-us-0.15",
+}
+
+
+def _vosk_model_dir(code):
+    import tarfile
+    import urllib.request
+    import zipfile
+
+    base = config.ASSETS_DIR / "vosk"
+    base.mkdir(parents=True, exist_ok=True)
+    name = _VOSK_MODELS.get(code, _VOSK_MODELS["en"])
+    d = base / name
+    if not (d / "conf" / "model.conf").exists():
+        print(f"[vosk] downloading model {name} …")
+        archive = None
+        for ext, opener in ((".tar.gz", tarfile.open), (".zip", zipfile.ZipFile)):
+            url = f"https://alphacephei.com/vosk/models/{name}{ext}"
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, timeout=240) as r:
+                    archive = base / f"{name}{ext}"
+                    with open(archive, "wb") as f:
+                        f.write(r.read())
+                break
+            except Exception as exc:
+                print(f"[vosk] {ext} download failed: {exc}")
+        if not archive:
+            raise RuntimeError(f"could not download Vosk model {name}")
+        with opener(archive) as af:
+            af.extractall(base)
+    return str(d)
+
+
+def _transcribe_vosk(song_path, lang=None):
+    import json as _json
+    import wave
+
+    from vosk import KaldiRecognizer, Model
+
+    code = _lang_code(lang)
+    model_path = _vosk_model_dir(code)
+    tmp = Path(tempfile.mkdtemp())
+    wav = tmp / "mono.wav"
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", str(song_path), "-ar", "16000", "-ac", "1", str(wav)],
+        check=True, capture_output=True,
+    )
+    model = Model(model_path)
+    wf = wave.open(str(wav), "rb")
+    rec = KaldiRecognizer(model, wf.getframerate())
+    words = []
+    last_partial = ""
+    while True:
+        data = wf.readframes(4000)
+        if not data:
+            break
+        if rec.AcceptWaveform(data):
+            for w in _json.loads(rec.Result()).get("result", []):
+                words.append({"word": w["word"], "start": w["start"], "end": w["end"]})
+        else:
+            p = _json.loads(rec.PartialResult()).get("partial", "")
+            if p:
+                last_partial = p
+    final = _json.loads(rec.FinalResult())
+    for w in final.get("result", []):
+        words.append({"word": w["word"], "start": w["start"], "end": w["end"]})
+    wf.close()
+
+    if words:
+        return _group_words(words)
+
+    # No word-level timings (very short audio): use the transcript text,
+    # split into lines and distributed evenly across the duration.
+    text = (final.get("text") or last_partial).strip()
+    if not text:
+        raise RuntimeError("no speech detected by Vosk")
+    dur = song_duration(song_path)
+    toks = text.split()
+    if not toks:
+        raise RuntimeError("no speech detected by Vosk")
+    step = dur / len(toks)
+    chunk = 7
+    lines = []
+    for i in range(0, len(toks), chunk):
+        seg = toks[i:i + chunk]
+        s = i * step
+        e = min((i + len(seg)) * step, dur)
+        wps = (e - s) / len(seg) if seg else step
+        lines.append({
+            "text": " ".join(seg),
+            "start": s,
+            "end": e,
+            "words": [{"word": t, "start": s + j * wps, "end": s + (j + 1) * wps}
+                      for j, t in enumerate(seg)],
+        })
+    return lines
+
+
+def romanize_lines(lines):
+    """Convert Devanagari lyric lines to Hinglish (Latin) when possible."""
+    try:
+        from indic_transliteration import sanscript
+        from indic_transliteration.sanscript import transliterate
+    except Exception:
+        return lines  # keep Devanagari if the lib is missing
+    out = []
+    for ln in lines:
+        try:
+            ln = dict(ln)
+            ln["text"] = transliterate(ln["text"], sanscript.DEVANAGARI, sanscript.OPTITRANS)
+            if ln.get("words"):
+                ln["words"] = [dict(w, word=transliterate(w["word"], sanscript.DEVANAGARI, sanscript.OPTITRANS)) for w in ln["words"]]
+        except Exception:
+            pass
+        out.append(ln)
+    return out

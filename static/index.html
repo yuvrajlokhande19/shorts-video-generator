@@ -57,6 +57,14 @@
             <label>Voice</label>
             <select id="s_voice" style="flex:1"></select>
           </div>
+          <div class="field-row">
+            <label>Script language</label>
+            <select id="s_script_lang" style="flex:1">
+              <option value="english">English</option>
+              <option value="hinglish">Hinglish</option>
+              <option value="hindi">Hindi</option>
+            </select>
+          </div>
           <label class="check"><input type="checkbox" id="s_use_ai" checked/> Use Gemini (falls back to template if no key)</label>
         </div>
 
@@ -144,12 +152,14 @@
           <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm12-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" stroke-linecap="round" stroke-linejoin="round"/></svg> Background image</h3>
           <div class="radio-cards">
             <label class="radio-card" data-name="r_img"><span class="dot"></span> Upload</label>
-            <label class="radio-card active" data-name="r_img"><span class="dot"></span> Stock search</label>
+            <label class="radio-card active" data-name="r_img"><span class="dot"></span> Auto (from song)</label>
+            <label class="radio-card" data-name="r_img"><span class="dot"></span> Stock search</label>
             <label class="radio-card" data-name="r_img"><span class="dot"></span> AI image</label>
             <label class="radio-card" data-name="r_img"><span class="dot"></span> Gradient</label>
           </div>
           <input type="radio" name="r_img" value="upload" class="hidden"/>
-          <input type="radio" name="r_img" value="stock" checked class="hidden"/>
+          <input type="radio" name="r_img" value="auto" checked class="hidden"/>
+          <input type="radio" name="r_img" value="stock" class="hidden"/>
           <input type="radio" name="r_img" value="ai" class="hidden"/>
           <input type="radio" name="r_img" value="procedural" class="hidden"/>
 
@@ -208,6 +218,20 @@
         <input type="radio" name="r_lyr" value="auto" checked class="hidden"/>
         <input type="radio" name="r_lyr" value="text" class="hidden"/>
         <input type="radio" name="r_lyr" value="file" class="hidden"/>
+
+        <label style="margin-top:12px">Lyrics language
+          <select id="r_lyrics_lang">
+            <option value="hinglish" selected>Hinglish (Hindi in Latin script)</option>
+            <option value="hindi">Hindi (Devanagari)</option>
+            <option value="english">English</option>
+          </select>
+        </label>
+        <button class="btn-secondary" id="r_draft" type="button" style="margin-top:12px; width:auto; padding:10px 16px; font-size:13px">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M3 12h18" stroke-linecap="round"/></svg>
+          Draft lyrics
+        </button>
+        <p class="hint" style="margin-top:8px">Auto writes lyrics in the chosen language and syncs them. You can edit them below before (or after) generating.</p>
+
         <label style="margin-top:12px">Song theme / mood (used to write lyrics)
           <input id="r_theme" type="text" placeholder="e.g. lofi, missing someone, late-night drive"/>
         </label>
@@ -253,6 +277,15 @@
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" stroke-linecap="round" stroke-linejoin="round"/></svg>
           Download
         </a>
+        <div class="edit-reel hidden" id="r_edit">
+          <h3><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" stroke-linecap="round" stroke-linejoin="round"/></svg> Edit &amp; re-render this reel</h3>
+          <p class="hint">Tweak the lyrics (or change the Style card above) and re-render — no need to re-upload the song.</p>
+          <textarea id="r_edit_lyrics" rows="6" style="margin-top:10px"></textarea>
+          <button class="btn-primary" id="r_rerender" type="button" style="width:auto; padding:10px 18px; margin-top:10px">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Re-render reel
+          </button>
+        </div>
       </div>
     </section>
   </main>

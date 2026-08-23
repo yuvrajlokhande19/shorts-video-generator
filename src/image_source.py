@@ -1,4 +1,5 @@
 """Background image sourcing for Lyric Reels: upload / stock / AI / procedural."""
+import re
 import subprocess
 import urllib.parse
 import urllib.request
@@ -66,6 +67,67 @@ def get_image(mode, workdir, w, h, uploaded=None, image_url=None,
     # procedural default
     _procedural(out, w, h, seed)
     return out
+
+
+def _derive_keywords(theme, lyrics, count=5):
+    """Pick a few search keywords from the theme / lyric lines."""
+    if config.GEMINI_API_KEY:
+        try:
+            import json
+            import google.generativeai as genai
+            genai.configure(api_key=config.GEMINI_API_KEY)
+            model = genai.GenerativeModel(config.GEMINI_MODEL)
+            prompt = (
+                f"Given this short-video concept/lyrics, return {count} short, comma-separated "
+                f"visual search keywords (2-3 words each) for stock photos that match the mood. "
+                f"Concept: {theme}\nLyrics: {lyrics[:400]}\n"
+                f"Return only a comma-separated list, no quotes."
+            )
+            txt = model.generate_content(prompt).text or ""
+            kws = [k.strip() for k in txt.split(",") if k.strip()]
+            if kws:
+                return kws[:count]
+        except Exception as exc:
+            print(f"[image] keyword AI failed ({exc}); using simple split.")
+    # Fallback: theme words + first words of lyric lines.
+    words = []
+    for w in re.split(r"\W+", (theme or "").lower()):
+        if len(w) > 3 and w not in words:
+            words.append(w)
+    for line in (lyrics or "").splitlines()[:6]:
+        for w in re.split(r"\W+", line.lower()):
+            if len(w) > 4 and w not in words:
+                words.append(w)
+        if len(words) >= count:
+            break
+    return words[:count] or ["mood", "ambience"]
+
+
+def get_images_auto(theme, lyrics, workdir, w, h, count=5):
+    """Fetch internet stock images (Pexels/Pixabay) matching the song, falling
+    back to procedural gradients when no key/results. Returns a list of paths."""
+    keywords = _derive_keywords(theme, lyrics, count)
+    paths = []
+    for kw in keywords:
+        try:
+            hits = search_images(kw, count=1)
+            if hits:
+                tmp = workdir / f"auto_{len(paths)}.jpg"
+                _download(hits[0]["url"], tmp)
+                _crop(tmp, workdir / f"bg_{len(paths)}.png", w, h)
+                paths.append(workdir / f"bg_{len(paths)}.png")
+        except Exception as exc:
+            print(f"[image] auto fetch failed for '{kw}': {exc}")
+        if len(paths) >= count:
+            break
+    # Fill remaining with procedural gradients so we always have >=1.
+    seed = 0
+    while len(paths) < max(2, count):
+        out = workdir / f"bg_{len(paths)}.png"
+        _procedural(out, w, h, seed)
+        paths.append(out)
+        seed += 1
+    return paths
 
 
 def _stock_search(query, count=6):

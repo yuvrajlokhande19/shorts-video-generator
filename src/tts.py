@@ -15,6 +15,11 @@ VOICES = {
     "Ryan (UK, Male)": "en-GB-RyanNeural",
     "Natasha (AU, Female)": "en-AU-NatashaNeural",
     "William (AU, Male)": "en-AU-WilliamNeural",
+    # Indian voices (great for Hinglish / Hindi shorts)
+    "Neerja (India, Female)": "en-IN-NeerjaNeural",
+    "Prabhat (India, Male)": "en-IN-PrabhatNeural",
+    "Swara (Hindi, Female)": "hi-IN-SwaraNeural",
+    "Madhur (Hindi, Male)": "hi-IN-MadhurNeural",
 }
 
 VOICE_LIST = [{"label": k, "id": v} for k, v in VOICES.items()]

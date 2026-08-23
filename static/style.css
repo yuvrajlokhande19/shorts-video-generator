@@ -225,6 +225,30 @@ input[type=range] { width: 100%; accent-color: var(--accent-2); }
 .btn-primary:disabled { opacity: .55; cursor: progress; }
 .btn-primary svg { width: 18px; height: 18px; }
 
+/* secondary button (draft / lighter action) */
+.btn-secondary {
+  display: inline-flex; align-items: center; gap: 8px; cursor: pointer; color: #fff;
+  font-weight: 600; font-size: 13px; padding: 10px 16px; border-radius: 12px;
+  background: linear-gradient(135deg, rgba(124,58,237,.9), rgba(56,189,248,.85));
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 8px 22px rgba(124,58,237,.35); transition: transform .2s, box-shadow .2s;
+}
+.btn-secondary:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(124,58,237,.5); }
+.btn-secondary svg { width: 14px; height: 14px; }
+
+/* edit-after panel inside a result */
+.edit-reel {
+  margin-top: 16px; padding: 16px; border-radius: 14px;
+  background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow);
+  animation: slideIn .3s ease both;
+}
+.edit-reel h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; font-size: 15px; }
+.edit-reel textarea {
+  width: 100%; min-height: 120px; resize: vertical; padding: 10px 12px; color: #fff;
+  background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 10px;
+  font: 13.5px/1.5 Inter, system-ui, sans-serif;
+}
+
 /* progress */
 .progress {
   display: none; margin-top: 18px; background: var(--surface); backdrop-filter: blur(16px);

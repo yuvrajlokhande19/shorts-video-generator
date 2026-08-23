@@ -171,6 +171,7 @@ $("s_generate").addEventListener("click", async () => {
   fd.append("topic", $("s_topic").value.trim());
   fd.append("orientation", document.querySelector('input[name=s_orient]:checked').value);
   fd.append("voice", $("s_voice").value);
+  fd.append("script_lang", $("s_script_lang").value);
   if ($("s_use_ai").checked) fd.append("use_ai", "on");
   fd.append("music_volume", $("s_mvol").value);
   fd.append("font", $("s_font").value);
@@ -245,6 +246,7 @@ $("r_generate").addEventListener("click", async () => {
   fd.append("orientation", document.querySelector('input[name=r_orient]:checked').value);
   fd.append("image_mode", document.querySelector('input[name=r_img]:checked').value);
   fd.append("lyrics_mode", document.querySelector('input[name=r_lyr]:checked').value);
+  fd.append("lyrics_lang", $("r_lyrics_lang").value);
   fd.append("theme", $("r_theme").value);
   if ($("r_auto").checked) fd.append("auto_sync", "on");
   if ($("r_kenburns").checked) fd.append("kenburns", "on");
@@ -273,7 +275,15 @@ $("r_generate").addEventListener("click", async () => {
     const resp = await fetch("/api/lyric/generate", { method: "POST", body: fd });
     await streamSSE(resp, (d) => {
       if (d.type === "progress") step("r", d.message, "done");
-      else if (d.type === "done") { finishProgress("r"); stopFluid(); step("r", d.message, "done"); showResult("r", d); }
+      else if (d.type === "done") { finishProgress("r"); stopFluid(); step("r", d.message, "done"); showResult("r", d);
+        if (d.job_id) {
+          window.__rJobId = d.job_id;
+          $("r_edit").classList.remove("hidden");
+          $("r_edit_lyrics").value = d.lyrics || "";
+          setRlyrMode("text");
+          $("r_lyrics").value = d.lyrics || "";
+        }
+      }
       else if (d.type === "error") { stopFluid(); step("r", d.message, "error"); }
     });
   } catch (e) { step("r", "Network error: " + e.message, "error"); }
@@ -287,6 +297,69 @@ document.querySelectorAll('.radio-card[data-name="r_lyr"]').forEach((c) => {
     $("r_lyrics").classList.toggle("hidden", val !== "text");
     $("r_lyrics_file").classList.toggle("hidden", val !== "file");
   });
+});
+
+/* set the Lyrics mode (auto/text/file) programmatically + update UI */
+function setRlyrMode(mode) {
+  const cards = [...document.querySelectorAll('.radio-card[data-name="r_lyr"]')];
+  const order = ["auto", "text", "file"];
+  const idx = order.indexOf(mode);
+  cards.forEach((c, i) => c.classList.toggle("active", i === idx));
+  const radios = [...document.querySelectorAll('input[name=r_lyr]')];
+  if (radios[idx]) radios[idx].checked = true;
+  $("r_lyrics").classList.toggle("hidden", mode !== "text");
+  $("r_lyrics_file").classList.toggle("hidden", mode !== "file");
+}
+
+/* Draft lyrics (no song needed) -> fill editable textarea */
+$("r_draft").addEventListener("click", async () => {
+  setupProgress("r");
+  startFluid();
+  const fd = new FormData();
+  fd.append("lyrics_lang", $("r_lyrics_lang").value);
+  fd.append("theme", $("r_theme").value);
+  fd.append("draft", "1");
+  try {
+    const resp = await fetch("/api/lyric/generate", { method: "POST", body: fd });
+    await streamSSE(resp, (d) => {
+      if (d.type === "progress") step("r", d.message, "done");
+      else if (d.type === "done" && d.type2 === "lyrics") {
+        finishProgress("r"); stopFluid(); step("r", d.message, "done");
+        setRlyrMode("text");
+        $("r_lyrics").value = d.lyrics || "";
+      } else if (d.type === "error") { stopFluid(); step("r", d.message, "error"); }
+    });
+  } catch (e) { step("r", "Network error: " + e.message, "error"); }
+});
+
+/* Re-render a finished reel with edited lyrics / style */
+$("r_rerender").addEventListener("click", async () => {
+  if (!window.__rJobId) { alert("Generate a reel first."); return; }
+  setupProgress("r");
+  startFluid();
+  const fd = new FormData();
+  fd.append("job_id", window.__rJobId);
+  fd.append("lyrics_text", $("r_edit_lyrics").value);
+  fd.append("font", $("r_font").value);
+  fd.append("size", $("r_size").value);
+  fd.append("text_color", $("r_tcolor").value);
+  fd.append("highlight_color", $("r_hcolor").value);
+  fd.append("outline_color", $("r_ocolor").value);
+  fd.append("position", $("r_pos").value);
+  if ($("r_bold").checked) fd.append("bold", "on");
+  if ($("r_box").checked) fd.append("box", "on");
+  if ($("r_preview").checked) fd.append("preview", "on");
+  if ($("r_kenburns").checked) fd.append("kenburns", "on");
+  try {
+    const resp = await fetch("/api/lyric/regenerate", { method: "POST", body: fd });
+    await streamSSE(resp, (d) => {
+      if (d.type === "progress") step("r", d.message, "done");
+      else if (d.type === "done") {
+        finishProgress("r"); stopFluid(); step("r", d.message, "done"); showResult("r", d);
+        if (d.job_id) { window.__rJobId = d.job_id; $("r_edit_lyrics").value = d.lyrics || ""; }
+      } else if (d.type === "error") { stopFluid(); step("r", d.message, "error"); }
+    });
+  } catch (e) { step("r", "Network error: " + e.message, "error"); }
 });
 
 /* ---------------- fluid simulation (generative background) ---------------- */
