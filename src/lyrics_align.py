@@ -219,6 +219,8 @@ def _template_lyrics(theme, lang="hinglish"):
 
 
 def parse_lyrics(text, filename=None):
+    if text and text.startswith("\ufeff"):
+        text = text[1:]
     fmt = detect_format(filename, text)
     if fmt == "lrc":
         return parse_lrc(text)

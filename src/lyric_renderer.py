@@ -1,6 +1,7 @@
 """Render a Lyric Reel: static/AI/stock image + Ken Burns + karaoke ASS
 subtitles + the song, into an HD MP4."""
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -111,12 +112,19 @@ def render(image_path, song_path, ass_path, w, h, out_path, duration,
         )
         input_args = ["-framerate", "30", "-loop", "1", "-i", image_path[0]]
     else:
-        # slideshow: each image shown for an equal slice of the song
+        # slideshow: each image shown for an equal slice of the song.
+        # Copy every image into the render workdir so the basenames in
+        # slides.txt always resolve (the source images may live elsewhere,
+        # e.g. a previous run's workdir when re-rendering).
         slice_dur = duration / len(image_path)
         list_path = work / "slides.txt"
         with open(list_path, "w", encoding="utf-8") as f:
             for p in image_path:
-                f.write(f"file '{Path(p).name}'\n")
+                src = Path(p).resolve()
+                dst = work / src.name
+                if src != dst.resolve():
+                    shutil.copy(src, dst)
+                f.write(f"file '{dst.name}'\n")
                 f.write(f"duration {slice_dur:.3f}\n")
         pre = (
             f"[0:v]scale=iw*max({w}/iw\\,{h}/ih):ih*max({w}/iw\\,{h}/ih)[s];"

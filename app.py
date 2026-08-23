@@ -199,7 +199,7 @@ def api_generate():
 
 @app.route("/api/lyric/generate", methods=["POST"])
 def api_lyric_generate():
-    is_draft = bool(request.form.get("draft"))
+    is_draft = request.form.get("lyrics_mode") == "draft" or bool(request.form.get("draft"))
     lyrics_lang = request.form.get("lyrics_lang", "hinglish")
     theme = request.form.get("theme", "")
 
