@@ -302,15 +302,17 @@ def auto_align(lines, song_path):
 def transcribe_lyrics(song_path, lang=None):
     """Extract the REAL sung lyrics from a song with word-level timestamps.
 
-    Uses faster-whisper (with vocal isolation via demucs) when available,
-    otherwise falls back to the lightweight Vosk engine (no torch needed)."""
+    Primary engine: faster-whisper (no torch needed) with lightweight
+    vocal-isolation preprocessing. Falls back to the Vosk engine if
+    faster-whisper is unavailable."""
     try:
-        import torch  # noqa: F401
-        from faster_whisper import WhisperModel  # noqa: F401
-        return _transcribe_whisper(song_path, lang)
-    except Exception:
-        pass
-    return _transcribe_vosk(song_path, lang)
+        return _transcribe_fw(song_path, lang)
+    except Exception as exc:
+        print(f"[lyrics] faster-whisper failed ({exc}); trying Vosk.")
+        try:
+            return _transcribe_vosk(song_path, lang)
+        except Exception as exc2:
+            raise RuntimeError(f"lyric transcription failed: {exc2}")
 
 
 def _lang_code(lang):
@@ -338,34 +340,60 @@ def _mkline(ws):
     }
 
 
-def _transcribe_whisper(song_path, lang=None):
+def _vocal_wav(song_path):
+    """Preprocess a song to maximise speech recognition: drop to mono 16k and
+    band-limit to the vocal range, reduce broadband music with a noise gate,
+    then normalise. No GPU/torch needed."""
     import tempfile
     from pathlib import Path
 
-    from demucs.apply import apply_model, load_model
-    from demucs.pretrained import get_model
+    tmp = Path(tempfile.mkdtemp())
+    wav = tmp / "vocals.wav"
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", str(song_path), "-vn",
+         "-ac", "1", "-ar", "16000",
+         "-af", "highpass=f=150,lowpass=f=4000,afftdn=nf=-22,"
+                "dynaudnorm=f=150:g=12:p=0.8:m=100",
+         str(wav)],
+        check=True, capture_output=True,
+    )
+    return wav
+
+
+_FW_MODEL = None
+_FW_SIZE = None
+
+
+def _load_fw(size="small"):
+    global _FW_MODEL, _FW_SIZE
     from faster_whisper import WhisperModel
 
-    tmp = Path(tempfile.mkdtemp())
-    model = get_model("htdemucs")
-    apply_model(model, str(song_path), str(tmp / "vocals"), device="cpu")
-    vocal = tmp / "vocals" / "vocals.wav"
-    wmodel = WhisperModel("base", device="cpu", compute_type="int8")
-    segs, _ = wmodel.transcribe(str(vocal), language=lang, word_timestamps=True)
-    lines = []
+    if _FW_MODEL is None or _FW_SIZE != size:
+        print(f"[lyrics] loading faster-whisper model '{size}' …")
+        _FW_MODEL = WhisperModel(size, device="cpu", compute_type="int8")
+        _FW_SIZE = size
+    return _FW_MODEL
+
+
+def _transcribe_fw(song_path, lang=None):
+    wav = _vocal_wav(song_path)
+    model = _load_fw("small")
+    wlang = {"hi": "hi", "en": "en"}.get(_lang_code(lang))  # None -> auto-detect
+    segs, _ = model.transcribe(
+        str(wav), language=wlang, word_timestamps=True,
+        vad_filter=True, condition_on_previous_text=False,
+    )
+    words = []
     for s in segs:
-        words = [{"word": w.word, "start": w.start, "end": w.end} for w in s.words]
-        if not words:
-            continue
-        lines.append({
-            "text": s.text.strip(),
-            "start": words[0]["start"],
-            "end": words[-1]["end"],
-            "words": words,
-        })
-    if not lines:
-        raise RuntimeError("no speech detected")
-    return lines
+        for w in s.words:
+            t = w.word.strip()
+            if t:
+                words.append({"word": t, "start": w.start, "end": w.end})
+    if not words:
+        raise RuntimeError("no speech detected by faster-whisper")
+    # Re-group into multiple timed lines for nicer karaoke captions.
+    return _group_words(words)
+
 
 
 _VOSK_MODELS = {
@@ -412,12 +440,7 @@ def _transcribe_vosk(song_path, lang=None):
 
     code = _lang_code(lang)
     model_path = _vosk_model_dir(code)
-    tmp = Path(tempfile.mkdtemp())
-    wav = tmp / "mono.wav"
-    subprocess.run(
-        ["ffmpeg", "-y", "-i", str(song_path), "-ar", "16000", "-ac", "1", str(wav)],
-        check=True, capture_output=True,
-    )
+    wav = _vocal_wav(song_path)
     model = Model(model_path)
     wf = wave.open(str(wav), "rb")
     rec = KaldiRecognizer(model, wf.getframerate())

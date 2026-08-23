@@ -4,6 +4,9 @@ edge-tts
 pydub
 numpy
 requests
+vosk
+indic-transliteration
+faster-whisper
 
 # Optional (only needed if you add a GEMINI_API_KEY in .env):
 #   pip install google-generativeai
