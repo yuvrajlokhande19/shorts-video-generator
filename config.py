@@ -11,14 +11,17 @@ ASSETS_DIR = BASE_DIR / "assets"
 CLIPS_DIR = ASSETS_DIR / "clips"
 MUSIC_DIR = ASSETS_DIR / "music"
 TEMP_DIR = BASE_DIR / "temp"
+MOVIES_DIR = BASE_DIR / "movies"
 
-for d in (OUTPUT_DIR, ASSETS_DIR, CLIPS_DIR, MUSIC_DIR, TEMP_DIR):
+for d in (OUTPUT_DIR, ASSETS_DIR, CLIPS_DIR, MUSIC_DIR, TEMP_DIR, MOVIES_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
 PIXABAY_API_KEY = os.getenv("PIXABAY_API_KEY", "")
+TMDB_API_KEY = os.getenv("TMDB_API_KEY", "")
+OMDB_API_KEY = os.getenv("OMDB_API_KEY", "")
 
 RESOLUTIONS = {
     "vertical": (1080, 1920),    # 9:16  (TikTok / Reels / Shorts)
@@ -39,8 +42,10 @@ GRADIENTS = [
 
 FONTS_DIR = BASE_DIR / "fonts"
 
-# Curly / handwriting display fonts bundled in fonts/ (filename -> ASS family name)
+# All available fonts for text overlays (system fonts + bundled)
+# Format: display_name -> font_file_or_system_name
 FONTS = {
+    # Bundled handwriting/display fonts
     "Dancing Script": "DancingScript.ttf",
     "Pacifico": "Pacifico.ttf",
     "Lobster": "Lobster.ttf",
@@ -51,4 +56,36 @@ FONTS = {
     "Kaushan Script": "KaushanScript.ttf",
     "Oleo Script": "OleoScript.ttf",
     "Tangerine": "Tangerine.ttf",
+    # System fonts (common on Windows/macOS/Linux)
+    "Arial": "Arial",
+    "Arial Black": "Arial Black",
+    "Impact": "Impact",
+    "Georgia": "Georgia",
+    "Times New Roman": "Times New Roman",
+    "Verdana": "Verdana",
+    "Tahoma": "Tahoma",
+    "Trebuchet MS": "Trebuchet MS",
+    "Comic Sans MS": "Comic Sans MS",
+    "Courier New": "Courier New",
+    "Roboto": "Roboto",
+    "Open Sans": "Open Sans",
+    "Montserrat": "Montserrat",
+    "Poppins": "Poppins",
+    "Inter": "Inter",
+    "Noto Sans": "Noto Sans",
+    "Noto Sans Devanagari": "Noto Sans Devanagari",
+    "Hind": "Hind",
+}
+
+# Movie Splitter Settings
+SPLITTER_DEFAULTS = {
+    "segment_duration": 30.0,  # seconds
+    "font_size": 56,
+    "font_color": "#FFFFFF",
+    "outline_color": "#000000",
+    "font_family": "Poppins",
+    "movie_name_position": "top",
+    "part_text_position": "bottom",
+    "pad_last_segment": True,
+    "background_color": "black",
 }

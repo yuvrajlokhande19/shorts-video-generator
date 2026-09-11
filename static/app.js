@@ -391,3 +391,433 @@ function loopFluid() {
 }
 function startFluid() { resizeFluid(); fluid.classList.add("on"); if (!fluidRAF) loopFluid(); }
 function stopFluid() { fluid.classList.remove("on"); if (fluidRAF) { cancelAnimationFrame(fluidRAF); fluidRAF = null; } }
+
+
+/* ============ MOVIE SPLITTER FUNCTIONALITY ============ */
+
+let splitterVideo = null;
+let splitterVideoUrl = null;
+
+// Load fonts for splitter
+async function loadSplitterFonts() {
+  try {
+    const f = await (await fetch("/api/fonts")).json();
+    const select = $("splitter_font");
+    select.innerHTML = "";
+    f.forEach((x) => select.appendChild(new Option(x, x)));
+    // Set default to Poppins if available
+    if (f.includes("Poppins")) select.value = "Poppins";
+  } catch (e) { console.error("Failed to load fonts:", e); }
+}
+loadSplitterFonts();
+
+// Bind dropzone for movie upload - direct input change listener (input overlays dropzone)
+const splitterVideoInput = $("splitter_video");
+splitterVideoInput.addEventListener("change", () => {
+  const files = splitterVideoInput.files;
+  splitterVideo = files[0] || null;
+  if (splitterVideo) {
+    handleSplitterVideoSelect(splitterVideo);
+  }
+});
+
+// Keep drag-and-drop functionality
+const splitterDropzone = $("splitter_dropzone");
+splitterDropzone.addEventListener("dragover", (e) => { e.preventDefault(); splitterDropzone.classList.add("drag"); });
+splitterDropzone.addEventListener("dragleave", () => splitterDropzone.classList.remove("drag"));
+splitterDropzone.addEventListener("drop", (e) => { 
+  e.preventDefault(); 
+  splitterDropzone.classList.remove("drag"); 
+  const files = e.dataTransfer.files;
+  splitterVideo = files[0] || null;
+  if (splitterVideo) {
+    handleSplitterVideoSelect(splitterVideo);
+  }
+});
+
+function handleSplitterVideoSelect(file) {
+  splitterVideoUrl = URL.createObjectURL(file);
+  
+  // Show video info
+  $("splitter_video_name").textContent = file.name;
+  $("splitter_video_info").classList.remove("hidden");
+  $("splitter_preview_video").src = splitterVideoUrl;
+  
+  // Get video metadata
+  const video = $("splitter_preview_video");
+  video.onloadedmetadata = () => {
+    const duration = video.duration;
+    const width = video.videoWidth;
+    const height = video.videoHeight;
+    $("splitter_video_duration").textContent = formatDuration(duration);
+    $("splitter_video_resolution").textContent = `${width}x${height}`;
+    
+    // Update segment estimate
+    updateSegmentEstimate(duration);
+    
+    // Auto-fill movie name from filename if empty
+    if (!$("splitter_movie_name").value.trim()) {
+      const name = file.name.replace(/\.[^/.]+$/, "");
+      $("splitter_movie_name").value = cleanMovieName(name);
+    }
+  };
+}
+
+function formatDuration(seconds) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
+function cleanMovieName(name) {
+  return name
+    .replace(/\[.*?\]/g, '')
+    .replace(/\(.*?\)/g, '')
+    .replace(/\b(1080p|720p|480p|4k|2160p|bluray|webrip|web-dl|hdtv|dvdrip|bdrip)\b/gi, '')
+    .replace(/\b(x264|x265|h264|h265|hevc|avc)\b/gi, '')
+    .replace(/\b(aac|ac3|dts|mp3|flac)\b/gi, '')
+    .replace(/\b(5\.1|7\.1|2\.0)\b/gi, '')
+    .replace(/\b(hindi|english|eng|hin|tam|tel|mal|kan)\b/gi, '')
+    .replace(/\b(official|trailer|teaser|full|movie|film)\b/gi, '')
+    .replace(/[-_.]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function updateSegmentEstimate(duration) {
+  const segmentDuration = parseFloat($("splitter_segment_duration").value) || 30;
+  const numSegments = Math.ceil(duration / segmentDuration);
+  const lastSegmentDuration = duration % segmentDuration || segmentDuration;
+  const needsPadding = lastSegmentDuration < segmentDuration;
+  
+  const html = `
+    <div class="estimate-item"><span class="estimate-label">Video Duration</span><span class="estimate-value">${formatDuration(duration)}</span></div>
+    <div class="estimate-item"><span class="estimate-label">Segment Duration</span><span class="estimate-value">${segmentDuration}s</span></div>
+    <div class="estimate-item"><span class="estimate-label">Total Reels</span><span class="estimate-value highlight">${numSegments}</span></div>
+    <div class="estimate-item"><span class="estimate-label">Last Segment</span><span class="estimate-value ${needsPadding ? 'highlight' : ''}">${formatDuration(lastSegmentDuration)}${needsPadding ? ' (will be padded)' : ''}</span></div>
+  `;
+  $("splitter_segment_estimate").innerHTML = html;
+}
+
+// Update estimate when segment duration changes
+$("splitter_segment_duration").addEventListener("change", () => {
+  const video = $("splitter_preview_video");
+  if (video.duration) updateSegmentEstimate(video.duration);
+});
+
+// Position button handlers
+function setupPositionButtons(containerId, hiddenInputId) {
+  const container = $(containerId);
+  const hiddenInput = $(hiddenInputId);
+  container.querySelectorAll(".pos-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      container.querySelectorAll(".pos-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      hiddenInput.value = btn.dataset.pos;
+      updatePreviewCanvas();
+    });
+  });
+}
+setupPositionButtons("splitter_movie_pos_buttons", "splitter_movie_name_position");
+setupPositionButtons("splitter_part_pos_buttons", "splitter_part_text_position");
+
+// Update preview canvas when style changes
+["splitter_font", "splitter_font_size", "splitter_font_color", "splitter_outline_color",
+ "splitter_movie_name_position", "splitter_part_text_position"].forEach(id => {
+  const el = $(id);
+  if (el) el.addEventListener("input", updatePreviewCanvas);
+  if (el && el.tagName === "SELECT") el.addEventListener("change", updatePreviewCanvas);
+});
+
+// Live preview canvas
+function updatePreviewCanvas() {
+  const canvas = $("splitter_preview_canvas");
+  const ctx = canvas.getContext("2d");
+  const w = 540, h = 960;
+  
+  // Clear
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, w, h);
+  
+  // Draw gradient background (simulating video)
+  const gradient = ctx.createLinearGradient(0, 0, w, h);
+  gradient.addColorStop(0, "#1a1a2e");
+  gradient.addColorStop(1, "#16213e");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, w, h);
+  
+  // Movie name
+  const movieName = $("splitter_movie_name").value || "Movie Title";
+  const partText = `Part 1 of ${Math.ceil(($("splitter_preview_video").duration || 120) / ($("splitter_segment_duration").value || 30))}`;
+  
+  const fontSize = parseInt($("splitter_font_size").value) || 56;
+  const fontFamily = $("splitter_font").value || "Poppins";
+  const fontColor = $("splitter_font_color").value || "#ffffff";
+  const outlineColor = $("splitter_outline_color").value || "#000000";
+  
+  const scale = 0.5; // Canvas is half resolution
+  
+  // Draw movie name
+  ctx.font = `bold ${fontSize * scale}px "${fontFamily}"`;
+  ctx.fillStyle = fontColor;
+  ctx.strokeStyle = outlineColor;
+  ctx.lineWidth = 3 * scale;
+  
+  const movieNamePos = $("splitter_movie_name_position").value;
+  const partPos = $("splitter_part_text_position").value;
+  
+  const margin = 40 * scale;
+  const textMetrics = ctx.measureText(movieName);
+  const textHeight = fontSize * scale * 1.2;
+  
+  let movieX, movieY, partX, partY;
+  
+  // Movie name position
+  switch (movieNamePos) {
+    case "top": movieX = (w - textMetrics.width) / 2; movieY = margin + textHeight; break;
+    case "top-left": movieX = margin; movieY = margin + textHeight; break;
+    case "top-right": movieX = w - textMetrics.width - margin; movieY = margin + textHeight; break;
+    case "center": movieX = (w - textMetrics.width) / 2; movieY = h / 2; break;
+    case "bottom": movieX = (w - textMetrics.width) / 2; movieY = h - margin; break;
+    case "bottom-left": movieX = margin; movieY = h - margin; break;
+    case "bottom-right": movieX = w - textMetrics.width - margin; movieY = h - margin; break;
+  }
+  
+  // Part text position
+  ctx.font = `bold ${(fontSize - 8) * scale}px "${fontFamily}"`;
+  const partMetrics = ctx.measureText(partText);
+  const partHeight = (fontSize - 8) * scale * 1.2;
+  
+  switch (partPos) {
+    case "top": partX = (w - partMetrics.width) / 2; partY = margin + partHeight; break;
+    case "top-left": partX = margin; partY = margin + partHeight; break;
+    case "top-right": partX = w - partMetrics.width - margin; partY = margin + partHeight; break;
+    case "center": partX = (w - partMetrics.width) / 2; partY = h / 2; break;
+    case "bottom": partX = (w - partMetrics.width) / 2; partY = h - margin; break;
+    case "bottom-left": partX = margin; partY = h - margin; break;
+    case "bottom-right": partX = w - partMetrics.width - margin; partY = h - margin; break;
+  }
+  
+  // Draw with outline
+  ctx.strokeText(movieName, movieX, movieY);
+  ctx.fillText(movieName, movieX, movieY);
+  
+  ctx.strokeText(partText, partX, partY);
+  ctx.fillText(partText, partX, partY);
+}
+
+// Auto-fetch movie metadata
+$("splitter_fetch_meta").addEventListener("click", async () => {
+  const btn = $("splitter_fetch_meta");
+  const query = $("splitter_movie_name").value.trim() || (splitterVideo ? splitterVideo.name : "");
+  if (!query) { alert("Enter a movie name or upload a video first."); return; }
+  
+  btn.disabled = true;
+  btn.innerHTML = `<svg class="spinner" width="14" height="14" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none" stroke-dasharray="30 30" stroke-linecap="round" style="animation: spin 1s linear infinite"/></svg> Searching...`;
+  
+  try {
+    const resp = await fetch("/api/movie/metadata", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, language: "en-US" })
+    });
+    const data = await resp.json();
+    
+    if (data.title) {
+      displayMovieMeta(data);
+    } else {
+      alert("Could not find movie info. Try a different name.");
+    }
+  } catch (e) {
+    alert("Search failed: " + e.message);
+  }
+  
+  btn.disabled = false;
+  btn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35" stroke-linecap="round" stroke-linejoin="round"/></svg> Auto-fetch Movie Info`;
+});
+
+function displayMovieMeta(data) {
+  const content = $("splitter_meta_content");
+  let html = "";
+  if (data.title) html += `<strong>Title:</strong> ${data.title}<br>`;
+  if (data.original_title && data.original_title !== data.title) html += `<strong>Original:</strong> ${data.original_title}<br>`;
+  if (data.year) html += `<strong>Year:</strong> ${data.year}<br>`;
+  if (data.runtime) html += `<strong>Runtime:</strong> ${data.runtime} min<br>`;
+  if (data.language) html += `<strong>Language:</strong> ${data.language}<br>`;
+  if (data.genres && data.genres.length) html += `<strong>Genres:</strong> ${data.genres.join(", ")}<br>`;
+  if (data.overview) html += `<strong>Overview:</strong> ${data.overview.substring(0, 200)}...<br>`;
+  html += `<br><small style="color:var(--muted)">Source: ${data.source}</small>`;
+  
+  content.innerHTML = html;
+  $("splitter_meta_result").classList.remove("hidden");
+  
+  // Use this title button
+  $("splitter_use_meta").onclick = () => {
+    $("splitter_movie_name").value = data.title;
+    updatePreviewCanvas();
+  };
+}
+
+// Generate reels
+$("splitter_generate").addEventListener("click", async () => {
+  const btn = $("splitter_generate");
+  
+  if (!splitterVideo) { alert("Please upload a video file first."); return; }
+  if (!$("splitter_movie_name").value.trim()) { alert("Please enter a movie name."); return; }
+  
+  btn.disabled = true;
+  btn.innerHTML = `<svg class="spinner" width="18" height="18" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none" stroke-dasharray="30 30" stroke-linecap="round" style="animation: spin 1s linear infinite"/></svg> Generating...`;
+  
+  setupProgress("splitter");
+  startFluid();
+  
+  const fd = new FormData();
+  fd.append("video_file", splitterVideo);
+  fd.append("movie_name", $("splitter_movie_name").value.trim());
+  fd.append("segment_duration", $("splitter_segment_duration").value);
+  fd.append("font_size", $("splitter_font_size").value);
+  fd.append("font_color", $("splitter_font_color").value);
+  fd.append("outline_color", $("splitter_outline_color").value);
+  fd.append("font_family", $("splitter_font").value);
+  fd.append("movie_name_position", $("splitter_movie_name_position").value);
+  fd.append("part_text_position", $("splitter_part_text_position").value);
+  fd.append("pad_last_segment", $("splitter_pad_last").checked ? "true" : "false");
+  fd.append("background_color", $("splitter_bg_color").value);
+  
+  try {
+    const resp = await fetch("/api/movie/split", { method: "POST", body: fd });
+    await streamSSE(resp, (d) => {
+      if (d.type === "progress") step("splitter", d.message, "done");
+      else if (d.type === "done") {
+        finishProgress("splitter");
+        stopFluid();
+        step("splitter", d.message, "done");
+        showSplitterResults(d);
+      }
+      else if (d.type === "error") { stopFluid(); step("splitter", d.message, "error"); }
+    });
+  } catch (e) {
+    stopFluid();
+    step("splitter", "Network error: " + e.message, "error");
+  }
+  
+  btn.disabled = false;
+  btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="6 4 20 12 6 20 6 4" fill="currentColor" stroke="none"/></svg> Generate Reels`;
+});
+
+function showSplitterResults(data) {
+  const grid = $("splitter_reels_grid");
+  grid.innerHTML = "";
+  
+  if (data.reels && data.reels.length > 0) {
+    data.reels.forEach((url, idx) => {
+      const item = document.createElement("div");
+      item.className = "reel-item";
+      item.innerHTML = `
+        <video playsinline muted loop preload="metadata">
+          <source src="${url}" type="video/mp4">
+        </video>
+        <div class="reel-info">
+          <div class="reel-title">${data.movie_name} - Part ${idx + 1} of ${data.total_parts}</div>
+          <div class="reel-meta">
+            <span>9:16 Portrait</span>
+            <span>30s</span>
+          </div>
+          <div class="reel-actions">
+            <a href="${url}" class="btn-download" download>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Download
+            </a>
+            <button class="btn-share" onclick="shareReel('${url}', '${data.movie_name} - Part ${idx + 1}')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51a5 5 0 0 1 7.41 0M15.42 19a5 5 0 0 1-7.41 0"/></svg>
+              Share
+            </button>
+          </div>
+        </div>
+      `;
+      // Auto-play on hover
+      const video = item.querySelector("video");
+      item.addEventListener("mouseenter", () => video.play().catch(()=>{}));
+      item.addEventListener("mouseleave", () => video.pause());
+      grid.appendChild(item);
+    });
+    
+    // Add download all button
+    const downloadAll = document.createElement("div");
+    downloadAll.className = "download-all";
+    downloadAll.innerHTML = `
+      <button class="btn-primary" onclick="downloadAllReels('${data.reels.join(",")}', '${data.movie_name}')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Download All (${data.reels.length} reels)
+      </button>
+    `;
+    grid.appendChild(downloadAll);
+  }
+  
+  $("splitter_result").classList.remove("show");
+  void $("splitter_result").offsetWidth;
+  $("splitter_result").classList.add("show");
+}
+
+// Initial preview
+updatePreviewCanvas();
+
+// Initial pill position
+setTimeout(movePill, 100);
+
+// Share reel function
+function shareReel(url, title) {
+  if (navigator.share) {
+    navigator.share({ title, url }).catch(() => {});
+  } else {
+    navigator.clipboard.writeText(url).then(() => {
+      alert("Link copied to clipboard!");
+    });
+  }
+}
+
+// Download all reels as ZIP (client-side)
+async function downloadAllReels(urlsStr, movieName) {
+  const urls = urlsStr.split(",");
+  const btn = event.target.closest("button");
+  const originalText = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = `<svg class="spinner" width="16" height="16" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none" stroke-dasharray="30 30" stroke-linecap="round" style="animation: spin 1s linear infinite"/></svg> Preparing...`;
+  
+  try {
+    // Use JSZip if available, otherwise download individually
+    if (typeof JSZip !== "undefined") {
+      const zip = new JSZip();
+      for (let i = 0; i < urls.length; i++) {
+        const resp = await fetch(urls[i]);
+        const blob = await resp.blob();
+        zip.file(`${movieName}_part${String(i+1).padStart(3, '0')}.mp4`, blob);
+      }
+      const content = await zip.generateAsync({ type: "blob" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(content);
+      link.download = `${movieName}_reels.zip`;
+      link.click();
+    } else {
+      // Fallback: download each file
+      for (let i = 0; i < urls.length; i++) {
+        const link = document.createElement("a");
+        link.href = urls[i];
+        link.download = `${movieName}_part${String(i+1).padStart(3, '0')}.mp4`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        await new Promise(r => setTimeout(r, 300)); // Small delay between downloads
+      }
+    }
+  } catch (e) {
+    console.error("Download failed:", e);
+    alert("Download failed. Try downloading individually.");
+  }
+  
+  btn.disabled = false;
+  btn.innerHTML = originalText;
+}

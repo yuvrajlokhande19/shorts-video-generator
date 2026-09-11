@@ -12,3 +12,6 @@ faster-whisper
 #   pip install google-generativeai
 # The app automatically falls back to a built-in template script generator
 # when no key is configured, so this is not required to run.
+
+# Movie metadata (TMDB/OMDB API keys optional)
+#   pip install requests (already included)

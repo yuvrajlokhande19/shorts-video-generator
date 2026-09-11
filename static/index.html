@@ -3,40 +3,194 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Auto Shorts — AI Video Studio</title>
+  <title>ReelSplitter — Movie to Reels Converter</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Righteous&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-  <canvas id="fluid"></canvas>
   <header class="topbar">
     <div class="brand">
       <span class="logo">
-        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 4 20 12 6 20 6 4" fill="#fff" stroke="none"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="6" width="20" height="12" rx="2"/>
+          <path d="M6 6v12M18 6v12M10 12h4" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+        </svg>
       </span>
-      Auto&nbsp;Shorts
+      ReelSplitter
     </div>
     <div class="seg" id="seg">
       <span class="seg-pill" id="segPill"></span>
-      <button class="seg-btn active" data-mode="short">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
-        Create Short
+      <button class="seg-btn active" data-mode="splitter">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="6" width="20" height="12" rx="2"/>
+          <path d="M6 6v12M18 6v12M10 12h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        Movie to Reels
+      </button>
+      <button class="seg-btn" data-mode="short">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2"/>
+          <path d="M3 9h18M9 21V9"/>
+        </svg>
+        AI Short
       </button>
       <button class="seg-btn" data-mode="reel">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-        Create Reel
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 18V5l12-2v13"/>
+          <circle cx="6" cy="18" r="3"/>
+          <circle cx="18" cy="16" r="3"/>
+        </svg>
+        Lyric Reel
       </button>
     </div>
   </header>
 
   <main>
+    <!-- ===================== MOVIE TO REELS SPLITTER ===================== -->
+    <section class="panel active" id="panel-splitter">
+      <div class="grid2">
+        <div class="card">
+          <span class="step-badge">1 · Source</span>
+          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" stroke-linecap="round" stroke-linejoin="round"/></svg> Upload Movie / Video</h3>
+          
+          <div class="dropzone" id="splitter_dropzone">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div>Drop movie file here or click to browse</div>
+            <p class="hint">Supports: MP4, MKV, AVI, MOV, WebM (max 2GB)</p>
+            <input id="splitter_video" type="file" accept="video/*" class="dropzone-input"/>
+          </div>
+          
+          <div id="splitter_video_info" class="hidden">
+            <div class="video-preview">
+              <video id="splitter_preview_video" controls playsinline></video>
+              <div class="video-meta">
+                <span id="splitter_video_name"></span>
+                <span id="splitter_video_duration"></span>
+                <span id="splitter_video_resolution"></span>
+              </div>
+            </div>
+          </div>
+          
+          <div class="field-row">
+            <label>Movie Name (shown on each reel)</label>
+            <input id="splitter_movie_name" type="text" placeholder="e.g. 3 Idiots" />
+          </div>
+          
+          <button class="btn-secondary" id="splitter_fetch_meta" type="button" style="margin-top:12px; width:auto; padding:10px 16px; font-size:13px">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Auto-fetch Movie Info
+          </button>
+          
+          <div id="splitter_meta_result" class="hidden" style="margin-top:12px; padding:12px; background:var(--muted); border-radius:8px">
+            <h4>Detected Movie Info:</h4>
+            <div id="splitter_meta_content"></div>
+            <button class="btn-secondary" id="splitter_use_meta" type="button" style="margin-top:8px; width:auto; padding:8px 14px; font-size:12px">Use This Title</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <span class="step-badge alt">2 · Segments</span>
+          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V5h16v2M9 5v14M15 5v14M4 19h16" stroke-linecap="round"/></svg> Segment Settings</h3>
+          
+          <div class="field-row">
+            <label>Segment Duration (seconds)</label>
+            <input id="splitter_segment_duration" type="number" value="30" min="10" max="120" step="5" style="width:100px" />
+          </div>
+          
+          <div class="field-row">
+            <label>Pad Last Segment</label>
+            <label class="check"><input type="checkbox" id="splitter_pad_last" checked/> Extend last segment to full duration by looping</label>
+          </div>
+          
+          <div class="field-row">
+            <label>Background for Letterboxing</label>
+            <select id="splitter_bg_color" style="width:150px">
+              <option value="black">Black</option>
+              <option value="white">White</option>
+              <option value="blur">Blurred Video</option>
+            </select>
+          </div>
+          
+          <div class="preview-section" style="margin-top:20px">
+            <h4>Estimated Output</h4>
+            <div id="splitter_segment_estimate" class="segment-estimate"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <span class="step-badge">3 · Text Overlays</span>
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V5h16v2M9 5v14M15 5v14M4 19h16" stroke-linecap="round"/></svg> Text Style & Position</h3>
+        
+        <div class="colorgrid">
+          <label class="color-field">Font
+            <select id="splitter_font"></select>
+          </label>
+          <label class="color-field">Size <input id="splitter_font_size" type="number" value="56" min="24" max="120" /></label>
+          <label class="color-field">Text Color <input id="splitter_font_color" type="color" value="#ffffff" /></label>
+          <label class="color-field">Outline Color <input id="splitter_outline_color" type="color" value="#000000" /></label>
+        </div>
+        
+        <div class="position-grid" style="margin-top:16px; display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:16px;">
+          <div class="position-card">
+            <h4>Movie Name Position</h4>
+            <div class="position-buttons" id="splitter_movie_pos_buttons">
+              <button type="button" class="pos-btn active" data-pos="top">Top</button>
+              <button type="button" class="pos-btn" data-pos="top-left">Top Left</button>
+              <button type="button" class="pos-btn" data-pos="top-right">Top Right</button>
+              <button type="button" class="pos-btn" data-pos="center">Center</button>
+              <button type="button" class="pos-btn" data-pos="bottom">Bottom</button>
+              <button type="button" class="pos-btn" data-pos="bottom-left">Bottom Left</button>
+              <button type="button" class="pos-btn" data-pos="bottom-right">Bottom Right</button>
+            </div>
+            <input type="hidden" id="splitter_movie_name_position" value="top" />
+          </div>
+          
+          <div class="position-card">
+            <h4>Part Number Position</h4>
+            <div class="position-buttons" id="splitter_part_pos_buttons">
+              <button type="button" class="pos-btn" data-pos="top">Top</button>
+              <button type="button" class="pos-btn" data-pos="top-left">Top Left</button>
+              <button type="button" class="pos-btn" data-pos="top-right">Top Right</button>
+              <button type="button" class="pos-btn" data-pos="center">Center</button>
+              <button type="button" class="pos-btn" data-pos="bottom">Bottom</button>
+              <button type="button" class="pos-btn" data-pos="bottom-left">Bottom Left</button>
+              <button type="button" class="pos-btn active" data-pos="bottom-right">Bottom Right</button>
+            </div>
+            <input type="hidden" id="splitter_part_text_position" value="bottom-right" />
+          </div>
+        </div>
+        
+        <!-- Live Preview Canvas -->
+        <div class="preview-canvas" style="margin-top:20px">
+          <h4>Live Preview</h4>
+          <canvas id="splitter_preview_canvas" width="540" height="960" style="max-width:100%; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,0.3);"></canvas>
+        </div>
+      </div>
+
+      <button class="btn-primary btn-lg" id="splitter_generate">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="6 4 20 12 6 20 6 4" fill="currentColor" stroke="none"/></svg>
+        Generate Reels
+      </button>
+
+      <div class="progress" id="splitter_progress">
+        <div class="bar-track"><div class="bar-fill" id="splitter_bar"></div></div>
+        <ul class="steps" id="splitter_steps"></ul>
+      </div>
+
+      <div class="result" id="splitter_result">
+        <h3>Generated Reels</h3>
+        <div id="splitter_reels_grid" class="reels-grid"></div>
+      </div>
+    </section>
+
     <!-- ===================== CREATE SHORT ===================== -->
-    <section class="panel active" id="panel-short">
+    <section class="panel" id="panel-short">
       <div class="grid2">
         <div class="card">
           <span class="step-badge">1 · Topic</span>
-          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M3 12h18" stroke-linecap="round"/></svg> Topic &amp; voice</h3>
+          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M3 12h18" stroke-linecap="round"/></svg> Topic & voice</h3>
           <input id="s_topic" type="text" placeholder="e.g. the benefits of reading" value="the benefits of reading" />
           <div class="chips" id="s_chips">
             <span class="chip">morning routine</span><span class="chip">why exercise matters</span>
@@ -144,7 +298,7 @@
     <section class="panel" id="panel-reel">
       <div class="hint-banner">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm12-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        Drop a song and we'll <b>write &amp; sync the lyrics</b> for you automatically.
+        Drop a song and we'll <b>write & sync the lyrics</b> for you automatically.
       </div>
       <div class="grid2">
         <div class="card">
@@ -183,7 +337,7 @@
 
         <div class="card">
           <span class="step-badge alt">2 · Visuals</span>
-          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm12-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" stroke-linecap="round" stroke-linejoin="round"/></svg> Song &amp; format</h3>
+          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm12-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" stroke-linecap="round" stroke-linejoin="round"/></svg> Song & format</h3>
           <div class="field-row">
             <label>Format</label>
             <div class="radio-cards" style="flex:1">
@@ -278,7 +432,7 @@
           Download
         </a>
         <div class="edit-reel hidden" id="r_edit">
-          <h3><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" stroke-linecap="round" stroke-linejoin="round"/></svg> Edit &amp; re-render this reel</h3>
+          <h3><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" stroke-linecap="round" stroke-linejoin="round"/></svg> Edit & re-render this reel</h3>
           <p class="hint">Tweak the lyrics (or change the Style card above) and re-render — no need to re-upload the song.</p>
           <textarea id="r_edit_lyrics" rows="6" style="margin-top:10px"></textarea>
           <button class="btn-primary" id="r_rerender" type="button" style="width:auto; padding:10px 18px; margin-top:10px">

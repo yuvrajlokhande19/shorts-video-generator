@@ -1,38 +1,52 @@
-# 🎬 Auto Shorts — AI Short-Video Generator
+# 🎬 Auto Shorts — AI Video Studio + Movie-to-Reels Splitter
 
-Turn a single topic or keyword into a finished, ready-to-post social video —
-**fully automated**. Give it _"the benefits of reading"_ and it generates the
-script, finds background footage, narrates it with text-to-speech, burns in
-styled subtitles, and mixes in background music. Output is HD in either
-**vertical 9:16** (TikTok / Reels / YouTube Shorts) or **horizontal 16:9**
-(YouTube).
+A complete video creation suite with **three powerful modes**:
+1. **AI Short Generator** — Turn topics into scripted shorts with TTS narration
+2. **Lyric Reel Creator** — Transform songs into synced karaoke-style lyric videos  
+3. **Movie-to-Reels Splitter** ⭐ NEW — Split movies into 30-second portrait reels with text overlays
 
-Built with **Python + Flask** and a tiny vanilla-JS web UI.
+Built with **Python + Flask** and a modern vanilla-JS web UI.
 
-![Vertical sample](samples/poster_vertical.png)
-![Horizontal sample](samples/poster_horizontal.png)
+---
 
 ## ✨ Features
 
-- **AI script generation** via Google Gemini (with a built-in free template
-  fallback so it works even with **no API key**).
-- **Free text-to-speech** using `edge-tts` (no key, many voices), including
-  **Indian voices** and **Hinglish / Hindi** script generation for Shorts.
-- **Stock footage** from Pexels / Pixabay when you provide a free API key,
-  otherwise automatically generated procedural background clips (also free).
-- **Burned-in subtitles** with customizable font, size, color, outline,
-  position, box, and a karaoke-style word highlight.
-- **Background music** — drop your own track in `assets/music/`, or a soft
-  ambient pad is synthesized for free.
-- **Customizable** voice, music volume, and orientation from the UI.
-- Rendered with **ffmpeg** at 1080×1920 / 1920×1080, 30 fps.
+### 🎞️ Movie-to-Reels Splitter (NEW)
+- **Upload any movie/video** (MP4, MKV, AVI, MOV, WebM up to 2GB)
+- **Auto-split into 30-second segments** in 9:16 portrait format (perfect for Reels/Shorts/TikTok)
+- **Smart last-segment handling** — pads final segment to full 30s by looping if needed
+- **Text overlays on every reel:**
+  - Movie title (customizable position: top, bottom, corners, center)
+  - Part number (e.g., "Part 1 of 12", "Part 2 of 12", etc.)
+- **Full style control:** 30+ fonts (including Hindi/Devanagari support), colors, outlines, sizes
+- **Live preview canvas** — see exactly how text overlays will look before generating
+- **Auto-fetch movie metadata** from TMDB/OMDB (title, year, genres, runtime, poster)
+- **Extracts clean title from filename** if no API keys configured
+- **Download individual reels or all as ZIP**
+
+### 🤖 AI Short Generator
+- **AI script generation** via Google Gemini (with free template fallback)
+- **Free text-to-speech** using `edge-tts` (Indian voices, Hinglish/Hindi/English)
+- **Stock footage** from Pexels/Pixabay or procedural gradients
+- **Burned-in subtitles** with customizable style (font, size, color, outline, position, box, karaoke highlight)
+- **Background music** — auto ambient or upload your own
+- **Output:** 1080×1920 (vertical) or 1920×1080 (horizontal), 30 fps
+
+### 🎵 Lyric Reel Creator
+- **Auto mode:** Drop a song → app transcribes *real* vocals via faster-whisper/Vosk → auto-syncs lyrics
+- **Languages:** Hinglish, Hindi (Devanagari), English
+- **Background:** Upload image, stock search, AI image (Gemini), or procedural gradient
+- **Style:** 10+ handwriting fonts, karaoke highlight, Ken Burns motion
+- **Edit & re-render** without re-uploading song
+
+---
 
 ## 🚀 Setup
 
 > Requires **Python 3.11+** and **ffmpeg** on your `PATH`.
 
 ```bash
-# 1. Clone / open the project
+# 1. Open the project
 cd auto-shorts
 
 # 2. Create a virtual environment
@@ -43,144 +57,151 @@ python -m venv venv
 # 3. Install dependencies
 pip install -r requirements.txt
 
-# 4. (Optional) add API keys for Gemini + stock video
+# 4. (Optional) add API keys
 copy .env.example .env
 #   edit .env and set GEMINI_API_KEY, PEXELS_API_KEY, PIXABAY_API_KEY
+#   TMDB_API_KEY, OMDB_API_KEY (for movie metadata)
 #   (all optional — the app runs fully free without them)
 
 # 5. Run it
 python app.py
 ```
 
-Open <http://127.0.0.1:5000> in your browser, type a topic, and hit
-**Generate video**.
+Open <http://127.0.0.1:5000> in your browser.
 
 ### One-click launcher (no terminal)
 `start.vbs` launches the server hidden and opens your browser automatically.
-Create a Desktop shortcut to it (or run it directly):
-
+Create a Desktop shortcut:
 ```powershell
-# from the project folder, pin a shortcut to your Desktop:
 $ws = New-Object -ComObject WScript.Shell
 $lnk = $ws.CreateShortcut("$([Environment]::GetFolderPath('Desktop'))\Auto Shorts.lnk")
 $lnk.TargetPath = "$PWD\start.vbs"; $lnk.WorkingDirectory = "$PWD"; $lnk.Save()
 ```
 
-Double-click **Auto Shorts** on your Desktop — the app opens in your browser.
-To stop the server, close the background `python.exe` (Task Manager), or use
-`start.bat` instead, which shows a terminal window you can stop with `Ctrl+C`.
+---
 
-### Using a Gemini API key (recommended)
-Get a free key at <https://aistudio.google.com/apikey> and put it in `.env`:
-```
-GEMINI_API_KEY=your_key_here
-GEMINI_MODEL=gemini-2.0-flash
-```
-Without a key the app still produces videos using a built-in script template.
+## 🔑 API Keys (All Optional)
 
-### Using real stock footage
-Add a free key from [Pexels](https://www.pexels.com/api/) or
-[Pixabay](https://pixabay.com/api/docs/) to `.env`. If no key is set, the app
-generates gradient background clips automatically.
+| Feature | Key | Get it free at |
+|---------|-----|----------------|
+| AI Scripts | `GEMINI_API_KEY` | <https://aistudio.google.com/apikey> |
+| Stock Video | `PEXELS_API_KEY` | <https://www.pexels.com/api/> |
+| Stock Video | `PIXABAY_API_KEY` | <https://pixabay.com/api/docs/> |
+| Movie Metadata | `TMDB_API_KEY` | <https://www.themoviedb.org/settings/api> |
+| Movie Metadata | `OMDB_API_KEY` | <http://www.omdbapi.com/apikey.aspx> |
 
-### Bring your own assets
-- Drop `.mp4` / `.mov` clips into `assets/clips/` → they are used as
-  backgrounds (cycled per sentence).
-- Drop a music file (`.mp3` / `.wav` / `.ogg`) into `assets/music/` → it is
-  looped as the soundtrack (random pick).
+**Without keys:** App uses templates, procedural backgrounds, and filename extraction — completely free.
 
-## 🎵 Lyric Reel mode (the headline feature)
+---
 
-Turn a **song** into a synced, stylized lyric video (Instagram Reel / TikTok)
-with almost no effort:
+## 🎞️ Movie-to-Reels Splitter — Detailed Guide
 
-- **Auto mode (default):** drop a **song** and the app **listens to it** — it
-  isolates the vocals and transcribes the *real* sung words with an offline speech
-  engine (Vosk), then **auto-syncs those exact lyrics to the music**. Choose the
-  lyric language: **Hinglish** (Hindi written in Latin script, e.g. *"kaise ho"*),
-  **Hindi** (Devanagari), or **English**. You can also type a theme to guide it.
-  No copy-pasting required.
-- **Lyrics options:** *Auto* (AI + sync), *Paste text*, or *Upload `.lrc`/`.srt`*
-  for frame-perfect sync.
-- **Background image:** upload your own, **stock search** (Pexels/Pixabay,
-  needs a free key), **AI image** (Gemini, needs `GEMINI_API_KEY`), or a
-  procedural gradient. A subtle Ken Burns zoom keeps it alive.
-- **Song:** upload any audio; *Suggest free songs* lists no-copyright sources
-  (Pixabay Music when keyed, else a curated list).
-- **Style:** bundled curly/handwriting fonts (Dancing Script, Pacifico, Lobster,
-  Great Vibes, Sacramento, …), text/highlight/outline colors, position,
-  bold/box, and a "next line" preview. Sung words light up in the highlight
-  color (karaoke effect).
-- **Render:** ffmpeg burns the karaoke ASS subtitles over the image and muxes
-  the song into a 9:16 (or 16:9) MP4.
+### Quick Start
+1. Click **"Movie to Reels"** tab (selected by default)
+2. **Drag & drop** a movie file or click to browse
+3. Enter **Movie Name** (auto-filled from filename)
+4. Click **"Auto-fetch Movie Info"** (optional, needs TMDB/OMDB key)
+5. Adjust **Text Overlay** settings (font, color, position)
+6. Click **"Generate Reels"**
 
-### Real vocal sync (works offline, no heavy deps)
-**Auto** mode extracts the song's *actual* sung lyrics. It runs the audio
-through lightweight vocal-isolation preprocessing (ffmpeg: mono 16 kHz,
-vocal band-pass, noise gate, normalization) and then transcribes with
-**faster-whisper** (`small`, CPU/int8 — **no torch/GPU needed**). Word-level
-timestamps are grouped into timed lines and (for Hinglish) romanized from
-Devanagari. The first run downloads the Whisper model (~460 MB, cached by
-HuggingFace). If faster-whisper is unavailable, it falls back to the tiny
-**Vosk** engine (`assets/vosk/`, ~40 MB each). Either way, no API key and no
-GPU are required.
+### Settings Explained
 
-### Fluid "generating" animation
-While a video renders, a fluid/liquid simulation plays behind the progress
-panel (theme-colored metaballs drifting and merging) and fades out when the
-video is ready.
+| Setting | Description | Default |
+|---------|-------------|---------|
+| Segment Duration | Length of each reel in seconds | 30s |
+| Pad Last Segment | Loop final segment to reach full duration | ✅ Enabled |
+| Background | Color for letterboxing (black/white/blurred) | Black |
+| Font | 30+ fonts including Poppins, Noto Sans Devanagari, Hind | Poppins |
+| Font Size | Text size in pixels | 56 |
+| Text Color | Main text color | White |
+| Outline Color | Text stroke color | Black |
+| Movie Name Position | Where to show movie title | Top |
+| Part Number Position | Where to show "Part X of Y" | Bottom Right |
 
-> Note: AI image generation and stock search need free API keys in `.env`.
-> The fully-free path is **upload your own image** + a procedural fallback.
+### Text Position Options
+- **Top** / **Bottom** / **Center**
+- **Top Left** / **Top Right** / **Bottom Left** / **Bottom Right**
 
-## 🗂️ Project layout
+### Last Segment Handling
+If your movie is 2h 15m 30s (8130s) with 30s segments:
+- Segments 1-270: 30s each (8100s)
+- Segment 271: 30s (padded from 30s remaining) ✅
+
+If movie is 2h 15m 10s (8110s):
+- Segments 1-270: 30s each (8100s)
+- Segment 271: 10s → **padded to 30s by looping** ✅
+
+---
+
+## 🗂️ Project Layout
 
 ```
 auto-shorts/
-├── app.py                 # Flask server + SSE progress API (both modes)
-├── config.py              # paths & settings (reads .env)
+├── app.py                 # Flask server + SSE progress API (3 modes)
+├── config.py              # Paths, settings, fonts, splitter defaults
 ├── src/
-│   ├── script_gen.py      # Gemini + template fallback (AI Script Reel)
+│   ├── script_gen.py      # AI script generation (Gemini + fallback)
 │   ├── tts.py             # edge-tts narration
 │   ├── stock.py           # Pexels/Pixabay or procedural clips
-│   ├── subtitles.py       # ASS subtitle styling (AI Script Reel)
-│   ├── music.py           # ambient synth / local music
-│   ├── video_builder.py   # ffmpeg assembly (AI Script Reel)
-│   ├── lyrics_align.py    # LRC/SRT parsing + auto-sync (Lyric Reel)
-│   ├── image_source.py     # upload / stock / AI / procedural images
-│   ├── lyric_renderer.py  # ASS karaoke + Ken Burns + ffmpeg (Lyric Reel)
-│   └── song_suggest.py    # free song suggestions
-├── fonts/                 # bundled curly/handwriting TTFs
-├── static/                # web UI (index.html, app.js, style.css)
-├── assets/                # optional user clips/ & music/
-├── output/                # generated videos (gitignored)
-└── samples/               # example outputs for the README
+│   ├── subtitles.py       # ASS subtitle styling (AI Shorts)
+│   ├── music.py           # Ambient synth / local music
+│   ├── video_builder.py   # FFmpeg assembly (AI Shorts)
+│   ├── lyrics_align.py    # LRC/SRT parsing + auto-sync (Lyric Reels)
+│   ├── image_source.py    # Upload / stock / AI / procedural images
+│   ├── lyric_renderer.py  # ASS karaoke + Ken Burns + FFmpeg (Lyric Reels)
+│   ├── song_suggest.py    # Free song suggestions
+│   ├── video_splitter.py  # ⭐ Movie-to-Reels splitting logic
+│   └── movie_metadata.py  # ⭐ TMDB/OMDB metadata fetching
+├── fonts/                 # Bundled TTF fonts (handwriting + system)
+├── static/                # Web UI (index.html, app.js, style.css)
+├── assets/                # User clips/ & music/
+├── movies/                # Uploaded movies (temp)
+├── output/                # Generated videos (gitignored)
+├── temp/                  # Temporary processing files
+└── samples/               # Example outputs
 ```
 
-## 🔧 How the pipeline works
+---
 
-1. **Script** — Gemini writes a hook → 3 points → CTA as short caption lines
-   (one line per subtitle). Falls back to a template offline.
-2. **Voiceover** — `edge-tts` narrates each line; sentence timings drive the
-   subtitle sync.
-3. **Footage** — one background clip per line (stock API or generated gradient
-   with slow zoom).
-4. **Subtitles** — an ASS file is built from your style options and burned in.
-5. **Music** — ambient pad (or your track) mixed under the narration at the
-   chosen volume.
-6. **Render** — ffmpeg cover-scales clips, burns subtitles, mixes audio, and
-   exports HD MP4.
+## 🔧 How the Movie Splitter Works
 
-## 📦 Sample output
+1. **Analyze** — FFprobe gets duration, resolution, codec
+2. **Calculate** — Split into N × 30s segments (last padded if needed)
+3. **Process each segment:**
+   - Trim to exact time range
+   - Scale & crop to 1080×1920 (9:16 portrait, center crop)
+   - Burn text overlays via FFmpeg `drawtext` filter:
+     - Movie name at chosen position
+     - "Part X of Y" at chosen position
+   - Pad last segment by looping if shorter than 30s
+4. **Encode** — H.264, CRF 20, AAC 128kbps, yuv420p
+5. **Output** — MP4 files in `output/` directory
 
-- `samples/sample_vertical.mp4` — 9:16 short
-- `samples/sample_horizontal.mp4` — 16:9 short
-- `samples/sample_lyric.mp4` — lyric reel (synced lyrics over a gradient)
+---
 
 ## ⚠️ Notes
-- For production deployments use a real WSGI server (e.g. `gunicorn`) instead
-  of Flask's dev server.
-- `google-generativeai` is only needed if you set `GEMINI_API_KEY`; install it
-  separately with `pip install google-generativeai` when required.
-- For **true vocal-synced lyrics** in Reel Auto mode, install
-  `pip install demucs faster-whisper` (CPU-capable, larger download).
+
+- **FFmpeg required** on PATH (test with `ffmpeg -version`)
+- **Production:** Use `gunicorn` instead of Flask dev server
+- **GPU:** Not required; all processing is CPU-based
+- **Memory:** Large movies (>2GB) may need more RAM
+- **Hindi/Devanagari:** Fonts like "Noto Sans Devanagari" and "Hind" included for proper rendering
+
+---
+
+## 📦 Sample Outputs
+
+- `samples/sample_vertical.mp4` — 9:16 AI Short
+- `samples/sample_horizontal.mp4` — 16:9 AI Short  
+- `samples/sample_lyric.mp4` — Lyric Reel with karaoke sync
+- `samples/sample_splitter.mp4` — Movie Reel with text overlays
+
+---
+
+## 🙏 Credits
+
+- **Fonts:** Google Fonts (Poppins, Righteous, Noto, Hind, etc.)
+- **Icons:** Heroicons / Lucide (SVG)
+- **TTS:** Microsoft Edge TTS (`edge-tts`)
+- **Speech:** faster-whisper / Vosk
+- **Video:** FFmpeg

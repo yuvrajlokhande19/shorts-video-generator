@@ -16,8 +16,11 @@ import src.lyrics_align as lyrics_align
 import src.image_source as image_source
 import src.lyric_renderer as lyric_renderer
 import src.song_suggest as song_suggest
+import src.video_splitter as video_splitter
+import src.movie_metadata as movie_metadata
 
 app = Flask(__name__, static_folder=None)
+app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024  # 2GB max upload
 
 # In-memory store of finished lyric reels so they can be re-edited/re-rendered.
 LYRIC_JOBS = {}
@@ -143,6 +146,158 @@ def api_image_generate():
 def output_file(f):
     return send_file(config.OUTPUT_DIR / f, mimetype="video/mp4")
 
+
+# ============ MOVIE SPLITTER API ============
+
+@app.route("/api/movie/metadata", methods=["POST"])
+def api_movie_metadata():
+    """Fetch movie metadata from various sources."""
+    data = request.get_json(force=True, silent=True) or {}
+    query = data.get("query", "").strip()
+    language = data.get("language", "en-US")
+    
+    if not query:
+        return jsonify({"error": "query is required"}), 400
+    
+    try:
+        info = movie_metadata.get_movie_metadata(query, language)
+        if info:
+            return jsonify({
+                "title": info.title,
+                "original_title": info.original_title,
+                "year": info.year,
+                "overview": info.overview,
+                "poster_url": info.poster_url,
+                "backdrop_url": info.backdrop_url,
+                "genres": info.genres,
+                "runtime": info.runtime,
+                "language": info.language,
+                "imdb_id": info.imdb_id,
+                "tmdb_id": info.tmdb_id,
+                "source": info.source
+            })
+        else:
+            # Fallback: extract from filename
+            title = movie_metadata.MovieMetadataFetcher().extract_title_from_filename(query)
+            return jsonify({
+                "title": title,
+                "source": "filename"
+            })
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/movie/split", methods=["POST"])
+def api_movie_split():
+    """Split a movie/video into 30-second reel segments."""
+    if "video_file" not in request.files:
+        return jsonify({"error": "video_file is required"}), 400
+    
+    video = request.files["video_file"]
+    if not video or not video.filename:
+        return jsonify({"error": "No video file selected"}), 400
+    
+    # Get form parameters
+    movie_name = request.form.get("movie_name", "").strip()
+    if not movie_name:
+        # Use filename as movie name
+        movie_name = Path(video.filename).stem
+    
+    segment_duration = float(request.form.get("segment_duration", config.SPLITTER_DEFAULTS["segment_duration"]))
+    font_size = int(request.form.get("font_size", config.SPLITTER_DEFAULTS["font_size"]))
+    font_color = request.form.get("font_color", config.SPLITTER_DEFAULTS["font_color"])
+    outline_color = request.form.get("outline_color", config.SPLITTER_DEFAULTS["outline_color"])
+    font_family = request.form.get("font_family", config.SPLITTER_DEFAULTS["font_family"])
+    movie_name_position = request.form.get("movie_name_position", config.SPLITTER_DEFAULTS["movie_name_position"])
+    part_text_position = request.form.get("part_text_position", config.SPLITTER_DEFAULTS["part_text_position"])
+    pad_last_segment = request.form.get("pad_last_segment", "true").lower() in ("true", "1", "on")
+    background_color = request.form.get("background_color", config.SPLITTER_DEFAULTS["background_color"])
+    
+    # Save uploaded video
+    job_id = uuid.uuid4().hex[:8]
+    workdir = config.TEMP_DIR / job_id
+    workdir.mkdir(parents=True, exist_ok=True)
+    
+    video_path = workdir / f"source{Path(video.filename).suffix or '.mp4'}"
+    video.save(str(video_path))
+    
+    def gen():
+        try:
+            yield _ev("progress", "Analyzing video…")
+            
+            # Get video info
+            splitter = video_splitter.VideoSplitter(workdir)
+            info = splitter.get_video_info(video_path)
+            duration = info["duration"]
+            
+            yield _ev("progress", f"Video duration: {duration:.1f}s, splitting into {segment_duration}s segments…")
+            
+            # Calculate segments
+            segments = splitter.calculate_segments(duration)
+            total_parts = len(segments)
+            
+            yield _ev("progress", f"Creating {total_parts} reel(s)…")
+            
+            # Split video
+            output_paths = splitter.split_video(
+                input_path=video_path,
+                movie_name=movie_name,
+                output_dir=config.OUTPUT_DIR,
+                segment_duration=segment_duration,
+                font_size=font_size,
+                font_color=font_color,
+                outline_color=outline_color,
+                font_family=font_family,
+                movie_name_position=movie_name_position,
+                part_text_position=part_text_position,
+                pad_last_segment=pad_last_segment,
+                background_color=background_color
+            )
+            
+            # Return results
+            reel_urls = [f"/output/{p.name}" for p in output_paths]
+            yield _ev("done", f"Created {len(output_paths)} reel(s)!", 
+                      reels=reel_urls, total_parts=total_parts, movie_name=movie_name)
+            
+        except Exception as exc:
+            import traceback
+            traceback.print_exc()
+            yield _ev("error", f"Failed: {exc}")
+    
+    return Response(gen(), mimetype="text/event-stream")
+
+
+@app.route("/api/movie/preview", methods=["POST"])
+def api_movie_preview():
+    """Generate a preview of how the text overlay will look."""
+    data = request.get_json(force=True, silent=True) or {}
+    
+    movie_name = data.get("movie_name", "Movie Title")
+    part_number = data.get("part_number", 1)
+    total_parts = data.get("total_parts", 10)
+    font_size = data.get("font_size", config.SPLITTER_DEFAULTS["font_size"])
+    font_color = data.get("font_color", config.SPLITTER_DEFAULTS["font_color"])
+    outline_color = data.get("outline_color", config.SPLITTER_DEFAULTS["outline_color"])
+    font_family = data.get("font_family", config.SPLITTER_DEFAULTS["font_family"])
+    movie_name_position = data.get("movie_name_position", config.SPLITTER_DEFAULTS["movie_name_position"])
+    part_text_position = data.get("part_text_position", config.SPLITTER_DEFAULTS["part_text_position"])
+    
+    # Return preview config for frontend rendering
+    return jsonify({
+        "movie_name": movie_name,
+        "part_text": f"Part {part_number} of {total_parts}",
+        "font_size": font_size,
+        "font_color": font_color,
+        "outline_color": outline_color,
+        "font_family": font_family,
+        "movie_name_position": movie_name_position,
+        "part_text_position": part_text_position,
+    })
+
+
+# ============ EXISTING API ENDPOINTS ============
 
 @app.route("/api/generate", methods=["POST"])
 def api_generate():
