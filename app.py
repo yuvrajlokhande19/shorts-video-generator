@@ -194,79 +194,82 @@ def api_movie_split():
     """Split a movie/video into 30-second reel segments."""
     if "video_file" not in request.files:
         return jsonify({"error": "video_file is required"}), 400
-    
+
     video = request.files["video_file"]
     if not video or not video.filename:
         return jsonify({"error": "No video file selected"}), 400
-    
+
     # Get form parameters
     movie_name = request.form.get("movie_name", "").strip()
     if not movie_name:
-        # Use filename as movie name
         movie_name = Path(video.filename).stem
-    
+
     segment_duration = float(request.form.get("segment_duration", config.SPLITTER_DEFAULTS["segment_duration"]))
     font_size = int(request.form.get("font_size", config.SPLITTER_DEFAULTS["font_size"]))
     font_color = request.form.get("font_color", config.SPLITTER_DEFAULTS["font_color"])
     outline_color = request.form.get("outline_color", config.SPLITTER_DEFAULTS["outline_color"])
     font_family = request.form.get("font_family", config.SPLITTER_DEFAULTS["font_family"])
-    movie_name_position = request.form.get("movie_name_position", config.SPLITTER_DEFAULTS["movie_name_position"])
-    part_text_position = request.form.get("part_text_position", config.SPLITTER_DEFAULTS["part_text_position"])
-    pad_last_segment = request.form.get("pad_last_segment", "true").lower() in ("true", "1", "on")
-    background_color = request.form.get("background_color", config.SPLITTER_DEFAULTS["background_color"])
-    
+    movie_name_position = request.form.get(
+        "movie_name_position", config.SPLITTER_DEFAULTS["movie_name_position"]
+    )
+    part_text_position = request.form.get(
+        "part_text_position", config.SPLITTER_DEFAULTS["part_text_position"]
+    )
+    pad_last_segment = request.form.get("pad_last_segment", "true").lower() in (
+        "true",
+        "1",
+        "on"
+    )
+    background_color = request.form.get(
+        "background_color", config.SPLITTER_DEFAULTS["background_color"]
+    )
+
     # Save uploaded video
     job_id = uuid.uuid4().hex[:8]
     workdir = config.TEMP_DIR / job_id
     workdir.mkdir(parents=True, exist_ok=True)
-    
+
     video_path = workdir / f"source{Path(video.filename).suffix or '.mp4'}"
     video.save(str(video_path))
-    
-    def gen():
-        try:
-            yield _ev("progress", "Analyzing video…")
-            
-            # Get video info
-            splitter = video_splitter.VideoSplitter(workdir)
-            info = splitter.get_video_info(video_path)
-            duration = info["duration"]
-            
-            yield _ev("progress", f"Video duration: {duration:.1f}s, splitting into {segment_duration}s segments…")
-            
-            # Calculate segments
-            segments = splitter.calculate_segments(duration)
-            total_parts = len(segments)
-            
-            yield _ev("progress", f"Creating {total_parts} reel(s)…")
-            
-            # Split video
-            output_paths = splitter.split_video(
-                input_path=video_path,
-                movie_name=movie_name,
-                output_dir=config.OUTPUT_DIR,
-                segment_duration=segment_duration,
-                font_size=font_size,
-                font_color=font_color,
-                outline_color=outline_color,
-                font_family=font_family,
-                movie_name_position=movie_name_position,
-                part_text_position=part_text_position,
-                pad_last_segment=pad_last_segment,
-                background_color=background_color
-            )
-            
-            # Return results
-            reel_urls = [f"/output/{p.name}" for p in output_paths]
-            yield _ev("done", f"Created {len(output_paths)} reel(s)!", 
-                      reels=reel_urls, total_parts=total_parts, movie_name=movie_name)
-            
-        except Exception as exc:
-            import traceback
-            traceback.print_exc()
-            yield _ev("error", f"Failed: {exc}")
-    
-    return Response(gen(), mimetype="text/event-stream")
+
+    try:
+        splitter = video_splitter.VideoSplitter(workdir)
+        info = splitter.get_video_info(video_path)
+        duration = info["duration"]
+
+        segments = splitter.calculate_segments(duration)
+        total_parts = len(segments)
+
+        output_paths = splitter.split_video(
+            input_path=video_path,
+            movie_name=movie_name,
+            output_dir=config.OUTPUT_DIR,
+            segment_duration=segment_duration,
+            font_size=font_size,
+            font_color=font_color,
+            outline_color=outline_color,
+            font_family=font_family,
+            movie_name_position=movie_name_position,
+            part_text_position=part_text_position,
+            pad_last_segment=pad_last_segment,
+            background_color=background_color,
+        )
+
+        reel_urls = [f"/output/{p.name}" for p in output_paths]
+
+        return jsonify(
+            {
+                "success": True,
+                "movie_name": movie_name,
+                "total_parts": total_parts,
+                "reel_urls": reel_urls,
+                "message": f"Created {len(output_paths)} reel(s)!",
+            }
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": f"Failed: {str(e)}"}), 500
 
 
 @app.route("/api/movie/preview", methods=["POST"])

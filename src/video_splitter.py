@@ -1,10 +1,48 @@
-"""Movie-to-Reels Splitter: Split long videos into 30-second portrait reels with text overlays."""
+"""Movie-to-Reels Splitter: Split long videos into 30-second reel segments with text overlays."""
 import subprocess
 import json
 import math
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 import uuid
+
+
+# Font directory - relative to where this script is run or installed
+# The bundled fonts are in the fonts/ directory
+FONTS_DIR = Path(__file__).parent.parent / "fonts" / "fonts"
+
+# Mapped font names to filenames (matching config.py FONTS dict)
+FONT_MAP = {
+    "Dancing Script": "DancingScript.ttf",
+    "Pacifico": "Pacifico.ttf",
+    "Lobster": "Lobster.ttf",
+    "Caveat": "Caveat.ttf",
+    "Pinyon Script": "PinyonScript.ttf",
+    "Great Vibes": "GreatVibes.ttf",
+    "Sacramento": "Sacramento.ttf",
+    "Kaushan Script": "KaushanScript.ttf",
+    "Oleo Script": "OleoScript.ttf",
+    "Tangerine": "Tangerine.ttf",
+    # System fonts - these may or may not work depending on the system
+    "Arial": None,  # Use system Arial
+    "Arial Black": None,
+    "Impact": None,
+    "Georgia": None,
+    "Times New Roman": None,
+    "Verdana": None,
+    "Tahoma": None,
+    "Trebuchet MS": None,
+    "Comic Sans MS": None,
+    "Courier New": None,
+    "Roboto": None,
+    "Open Sans": None,
+    "Montserrat": None,
+    "Poppins": None,
+    "Inter": None,
+    "Noto Sans": None,
+    "Noto Sans Devanagari": None,
+    "Hind": None,
+}
 
 
 class VideoSplitter:
@@ -16,6 +54,37 @@ class VideoSplitter:
     def __init__(self, workdir: Path):
         self.workdir = workdir
         self.workdir.mkdir(parents=True, exist_ok=True)
+    
+    def get_font_path(self, font_name: str) -> Path:
+        """Get the full path to a font file.
+        
+        Args:
+            font_name: The display name of the font
+            
+        Returns:
+            Path object pointing to the TTF font file, or the system font name
+        """
+        font_info = FONT_MAP.get(font_name)
+        if not font_info:
+            # Unknown font - try as system font name, fallback to bundled
+            font_info = "DancingScript.ttf"
+        
+        if font_info is None:
+            # System font - fall back to bundled DancingScript.ttf
+            # FFmpeg on Windows needs a .ttf file path
+            font_info = "DancingScript.ttf"
+        
+        # Bundled font - return full path
+        font_path = FONTS_DIR / font_info
+        if font_path.exists():
+            return font_path
+        # Fallback: try just the filename in the fonts dir
+        fallback = FONTS_DIR / font_info
+        if fallback.exists():
+            return fallback
+        
+        # Last resort: return the font info as a path object (may fail if not found)
+        return Path(font_info)
     
     def get_video_info(self, video_path: Path) -> Dict:
         """Get video duration, resolution, and other metadata using ffprobe."""
@@ -65,69 +134,175 @@ class VideoSplitter:
         
         return segments
     
-    def build_text_overlay_filter(
+    def _get_drawtext_filter(
         self,
         movie_name: str,
         part_number: int,
         total_parts: int,
-        position: str = "bottom",
         font_size: int = 48,
         font_color: str = "#FFFFFF",
         outline_color: str = "#000000",
-        font_family: str = "Arial",
+        font_family: str = "Poppins",
         movie_name_position: str = "top",
         part_text_position: str = "bottom"
     ) -> str:
-        """Build FFmpeg drawtext filter for movie name and part number.
+        """Build the drawtext filter string for FFmpeg.
         
-        Position options: top, bottom, center, top-left, top-right, bottom-left, bottom-right
+        Returns the filter portion that goes after scale/crop in the filter complex.
+        Uses FFmpeg's fontfile parameter with actual TTF file paths.
         """
-        w, h = self.REEL_RESOLUTION
-        
-        # Calculate positions based on preference
-        def get_position_coords(pos: str, text_h: int = 100) -> Tuple[str, str]:
-            margin = 80
-            if pos == "top":
-                return f"(w-text_w)/2", f"{margin}"
-            elif pos == "bottom":
-                return f"(w-text_w)/2", f"h-text_h-{margin}"
-            elif pos == "center":
-                return f"(w-text_w)/2", f"(h-text_h)/2"
-            elif pos == "top-left":
-                return f"{margin}", f"{margin}"
-            elif pos == "top-right":
-                return f"w-text_w-{margin}", f"{margin}"
-            elif pos == "bottom-left":
-                return f"{margin}", f"h-text_h-{margin}"
-            elif pos == "bottom-right":
-                return f"w-text_w-{margin}", f"h-text_h-{margin}"
-            else:
-                return f"(w-text_w)/2", f"h-text_h-{margin}"
-        
-        movie_x, movie_y = get_position_coords(movie_name_position)
-        part_x, part_y = get_position_coords(part_text_position)
+        # Get the font path
+        font_path = self.get_font_path(font_family)
         
         # Escape text for FFmpeg
         movie_name_escaped = movie_name.replace(":", "\\:").replace("'", "\\'").replace("%", "\\%")
         part_text = f"Part {part_number} of {total_parts}"
         part_text_escaped = part_text.replace(":", "\\:").replace("'", "\\'").replace("%", "\\%")
         
-        # Build drawtext filters
+        # Determine if we're using a full font path or a system font name
+        uses_full_path = font_path.suffix == ".ttf"
+        
+        # Position calculations using FFmpeg w/h expressions
+        # These use the video dimensions (1080x1920 after crop)
+        margin = 80
+        
+        # Movie name position
+        pos_exprs = {
+            "top": "(W-text_w)/2",
+            "bottom": "(W-text_w)/2",
+            "center": "(W-text_w)/2",
+            "top-left": "margin",
+            "top-right": "W-text_w-margin",
+            "bottom-left": "margin",
+            "bottom-right": "W-text_w-margin",
+        }
+        movie_x = pos_exprs.get(movie_name_position, "(W-text_w)/2")
+        movie_y_exprs = {
+            "top": margin,
+            "bottom": "H-text_h-margin",
+            "center": "(H-text_h)/2",
+            "top-left": margin,
+            "top-right": "H-text_h-margin",
+            "bottom-left": "H-text_h-margin",
+            "bottom-right": "H-text_h-margin",
+        }
+        movie_y = movie_y_exprs.get(movie_name_position, "H-text_h-margin")
+        
+        # Part text position
+        part_pos_exprs = {
+            "top": "(W-text_w)/2",
+            "bottom": "(W-text_w)/2",
+            "center": "(W-text_w)/2",
+            "top-left": "margin",
+            "top-right": "W-text_w-margin",
+            "bottom-left": "margin",
+            "bottom-right": "W-text_w-margin",
+        }
+        part_x = part_pos_exprs.get(part_text_position, "(W-text_w)/2")
+        part_pos_exprs_y = {
+            "top": margin + 60,
+            "bottom": "H-text_h-margin",
+            "center": "(H-text_h)/2",
+            "top-left": margin + 60,
+            "top-right": "H-text_h-margin",
+            "bottom-left": "H-text_h-margin",
+            "bottom-right": "H-text_h-margin",
+        }
+        part_y = part_pos_exprs_y.get(part_text_position, "H-text_h-margin")
+        
+# Build the drawtext filter using fontfile (FFmpeg on Windows requires fontfile)
+        # Look up font in bundled FONT_MAP, fallback to "Dancing Script"
+        font_rel = FONT_MAP.get(font_family)
+        if not font_rel or font_rel is None:
+            font_rel = "DancingScript.ttf"  # fallback bundled font
+        
+        # Build absolute path to the font file
+        font_path = FONTS_DIR / font_rel
+        font_path_str = str(font_path)
+        
+        # Verify font file exists, fallback if not
+        if not Path(font_path_str).exists():
+            font_path_str = font_rel
+        
+        # Escape single quotes in path for FFmpeg filter syntax
+        font_path_escaped = font_path_str.replace("'", "\\'")
+        
+        # Position calculations using FFmpeg w/h expressions
+        # These use the video dimensions (1080x1920 after crop)
+        margin = 80
+        
+        # Movie name position
+        pos_exprs = {
+            "top": "(W-text_w)/2",
+            "bottom": "(W-text_w)/2",
+            "center": "(W-text_w)/2",
+            "top-left": "margin",
+            "top-right": "W-text_w-margin",
+            "bottom-left": "margin",
+            "bottom-right": "W-text_w-margin",
+        }
+        movie_x = pos_exprs.get(movie_name_position, "(W-text_w)/2")
+        movie_y_exprs = {
+            "top": margin,
+            "bottom": "H-text_h-margin",
+            "center": "(H-text_h)/2",
+            "top-left": margin,
+            "top-right": "H-text_h-margin",
+            "bottom-left": "H-text_h-margin",
+            "bottom-right": "H-text_h-margin",
+        }
+        movie_y = movie_y_exprs.get(movie_name_position, "H-text_h-margin")
+        
+        # Part text position
+        part_pos_exprs = {
+            "top": "(W-text_w)/2",
+            "bottom": "(W-text_w)/2",
+            "center": "(W-text_w)/2",
+            "top-left": "margin",
+            "top-right": "W-text_w-margin",
+            "bottom-left": "margin",
+            "bottom-right": "W-text_w-margin",
+        }
+        part_x = part_pos_exprs.get(part_text_position, "(W-text_w)/2")
+        part_pos_exprs_y = {
+            "top": margin + 60,
+            "bottom": "H-text_h-margin",
+            "center": "(H-text_h)/2",
+            "top-left": margin + 60,
+            "top-right": "H-text_h-margin",
+            "bottom-left": "H-text_h-margin",
+            "bottom-right": "H-text_h-margin",
+        }
+        part_y = part_pos_exprs_y.get(part_text_position, "H-text_h-margin")
+        
+        # Build the drawtext filter using fontfile (required for FFmpeg on Windows)
         movie_filter = (
             f"drawtext=text='{movie_name_escaped}':"
-            f"fontfile={font_family}:fontsize={font_size}:"
+            f"fontfile='{font_path_escaped}':"
+            f"fontsize={font_size}:"
             f"fontcolor={font_color}:borderw=3:bordercolor={outline_color}:"
             f"x={movie_x}:y={movie_y}"
         )
         
+        # Add part number drawtext
         part_filter = (
-            f"drawtext=text='{part_text_escaped}':"
-            f"fontfile={font_family}:fontsize={font_size - 8}:"
+            f",drawtext=text='{part_text_escaped}':"
+            f"fontfile='{font_path_escaped}':"
+            f"fontsize={font_size - 8}:"
             f"fontcolor={font_color}:borderw=3:bordercolor={outline_color}:"
             f"x={part_x}:y={part_y}"
         )
         
-        return f"[0:v]{movie_filter},{part_filter}[v]"
+        # Add part number drawtext
+        part_filter = (
+            f",drawtext=text='{part_text_escaped}':"
+            f"fontfile='{font_path_escaped}':"
+            f"fontsize={font_size - 8}:"
+            f"fontcolor={font_color}:borderw=3:bordercolor={outline_color}:"
+            f"x={part_x}:y={part_y}"
+        )
+        
+        return movie_filter + part_filter
     
     def split_video(
         self,
@@ -138,7 +313,7 @@ class VideoSplitter:
         font_size: int = 48,
         font_color: str = "#FFFFFF",
         outline_color: str = "#000000",
-        font_family: str = "Arial",
+        font_family: str = "Poppins",
         movie_name_position: str = "top",
         part_text_position: str = "bottom",
         pad_last_segment: bool = True,
@@ -154,7 +329,7 @@ class VideoSplitter:
             font_size: Font size for text overlays
             font_color: Text color (hex)
             outline_color: Text outline color (hex)
-            font_family: Font family name
+            font_family: Font family name (must be in FONT_MAP or a system font)
             movie_name_position: Position for movie name
             part_text_position: Position for part number
             pad_last_segment: If True, pad last segment to full duration
@@ -187,54 +362,36 @@ class VideoSplitter:
             output_name = f"{movie_name.replace(' ', '_')}_part{part_num:03d}.mp4"
             output_path = output_dir / output_name
             
-            # Build filter complex
+            # Build the complete filter complex
+            # Filter chain:
             # 1. Trim the segment
-            # 2. Scale and crop to 9:16 portrait
-            # 3. Add text overlays
-            # 4. Pad last segment if needed
+            # 2. Scale and crop to 1080x1920 (9:16 portrait)
+            # 3. Add text overlays (movie name + part number)
+            # 4. If last segment needs padding, loop it
             
-            filter_parts = []
+            # Step 1: Trim and set PTS
+            trim_filter = f"[0:v]trim=start={start}:end={end},setpts=PTS-STARTPTS"
             
-            # Video filter chain
-            # Scale to cover 1080x1920 maintaining aspect ratio, then crop center
-            vf_scale = (
-                f"[0:v]trim=start={start}:end={end},setpts=PTS-STARTPTS,"
-                f"scale=1080:1920:force_original_aspect_ratio=increase,"
-                f"crop=1080:1920"
-            )
+            # Step 2: Scale and crop to 9:16 portrait
+            scale_crop = f"{trim_filter},scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
             
-            # Add text overlays
-            text_filter = self.build_text_overlay_filter(
+            # Step 3: Add text overlays
+            text_filter = self._get_drawtext_filter(
                 movie_name, part_num, total_parts,
-                font_size=font_size,
-                font_color=font_color,
-                outline_color=outline_color,
-                font_family=font_family,
-                movie_name_position=movie_name_position,
-                part_text_position=part_text_position
+                font_size, font_color, outline_color, font_family,
+                movie_name_position, part_text_position
             )
             
-            # Combine filters
-            filter_complex = f"{vf_scale}{text_filter}"
-            
-            # If padding last segment
-            if is_last and pad_last_segment and actual_duration < self.REEL_DURATION:
-                # Loop the last segment to fill remaining time
-                filter_complex = (
-                    f"{vf_scale},"
-                    f"loop=loop=-1:size={int(actual_duration * 30)}:start=0,"
-                    f"trim=duration={self.REEL_DURATION},"
-                    f"setpts=PTS-STARTPTS,"
-                    f"{text_filter.replace('[0:v]', '[0:v]')}"
-                )
+            # Combine scale+crop with drawtext
+            full_vf = f"{scale_crop},{text_filter}"
             
             # Audio filter - trim audio to match
             af_trim = f"[0:a]atrim=start={start}:end={end},asetpts=PTS-STARTPTS"
             if is_last and pad_last_segment and actual_duration < self.REEL_DURATION:
                 af_trim = f"[0:a]atrim=start={start}:end={end},asetpts=PTS-STARTPTS,aloop=loop=-1:size={int(actual_duration * 44100)},atrim=duration={self.REEL_DURATION}"
             
-            # Full filter complex
-            full_filter = f"{filter_complex};{af_trim}[a]"
+            # Full filter complex with audio
+            full_filter = f"{full_vf};{af_trim}[a]"
             
             cmd = [
                 "ffmpeg", "-y",
@@ -256,23 +413,22 @@ class VideoSplitter:
                 raise
         
         return output_paths
-
-
-def split_movie_to_reels(
-    input_path: Path,
-    movie_name: str,
-    output_dir: Path,
-    workdir: Optional[Path] = None,
-    **kwargs
-) -> List[Path]:
-    """Convenience function to split a movie into reels."""
-    if workdir is None:
-        workdir = Path.cwd() / "temp" / uuid.uuid4().hex[:8]
     
-    splitter = VideoSplitter(workdir)
-    return splitter.split_video(
-        input_path=input_path,
-        movie_name=movie_name,
-        output_dir=output_dir,
+    def split_movie_to_reels(
+        input_path: Path,
+        movie_name: str,
+        output_dir: Path,
+        workdir: Optional[Path] = None,
         **kwargs
-    )
+    ) -> List[Path]:
+        """Convenience function to split a movie into reels."""
+        if workdir is None:
+            workdir = Path.cwd() / "temp" / uuid.uuid4().hex[:8]
+        
+        splitter = VideoSplitter(workdir)
+        return splitter.split_video(
+            input_path=input_path,
+            movie_name=movie_name,
+            output_dir=output_dir,
+            **kwargs
+        )
